@@ -4,6 +4,10 @@
 
 HERE="$(dirname "$(readlink -f "$0")")"
 
+if [ -z "$CI" ]; then
+  TTY=-it
+fi
+
 set -ex
 cd "$HERE"
 
@@ -13,7 +17,7 @@ docker run -v cargo-oxidicom-target:/target docker.io/library/rust:1.76-bookworm
 
 # run container as the same container user as CUBE container, but also with host user
 # group for permission to read files in $HERE
-exec docker run --rm -it --name cargo-chris-scp -u 1001:0 --group-add "$(id -g)" \
+exec docker run --rm $TTY --name cargo-chris-scp -u 1001:0 --group-add "$(id -g)" \
   --net=minichris-docker_local \
   -v minichris-docker_chris_files:/data:rw \
   -v "$HERE:/src:ro" \
