@@ -21,5 +21,5 @@ LABEL org.opencontainers.image.authors="Jennings Zhang <jennings.zhang@childrens
     org.opencontainers.image.title="oxidicom" \
     org.opencontainers.image.description="DICOM file receiver for ChRIS backend"
 
-EXPOSE 4006
+EXPOSE 11111
 CMD ["/app/oxidicom"]

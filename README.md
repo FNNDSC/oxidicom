@@ -1,5 +1,9 @@
 # oxidicom
 
+[![GitHub tag](https://img.shields.io/github/v/tag/FNNDSC/oxidicom?filter=v*.*.*&label=version)](https://github.com/FNNDSC/oxidicom/pkgs/container/oxidicom)
+[![MIT License](https://img.shields.io/github/license/fnndsc/oxidicom)](https://github.com/FNNDSC/oxidicom/blob/master/LICENSE)
+[![CI](https://github.com/FNNDSC/oxidicom/actions/workflows/ci.yml/badge.svg)](https://github.com/FNNDSC/oxidicom/actions/workflows/ci.yml)
+
 `oxidicom` is a high-performance DICOM receiver for the
 [_ChRIS_ backend](https://github.com/FNNDSC/ChRIS_ultron_backEnd) (CUBE).
 It **partially** replaces [pfdcm](https://github.com/FNNDSC/pfdcm).
@@ -22,3 +26,20 @@ Rewriting the functionality of `pfdcm` in Rust and with a modern design has led 
 - Observability: `oxidicom` outputs structured logs. I also plan to add OpenTelemetry metrics.
 - Scalability: manual implementation of C-STORE makes `oxidicom` horizontally scalable (opposed to
   relying on dcmtk's `storescp`, which is harder to scale because it spawns subprocesses).
+
+## Environment Variables
+
+| Name                          | Description                                                                                             |
+|-------------------------------|---------------------------------------------------------------------------------------------------------|
+| `CHRIS_URL`                   | (required) CUBE `v1/api/` URL                                                                           |
+| `CHRIS_USERNAME`              | (required) Username of user to do PACSFile registration. Note: CUBE requires the username to be "chris" |
+| `CHRIS_PASSWORD`              | (required) User password                                                                                |
+| `CHRIS_FILES_ROOT`            | (required) Path to where _CUBE_'s storage is mounted                                                    |
+| `CHRIS_HTTP_RETRIES`          | Number of times to retry failed HTTP request to CUBE                                                    |
+| `CHRIS_PACS_NAME`             | Name of the PACS server pushing to `oxidicom`. (Should be configured as the same for `pfdcm`            |
+| `CHRIS_SCP_AET`               | DICOM AET name (PACS pushing to `oxidicom` should be configured to push to this name)                   |
+| `CHRIS_SCP_STRICT`            | Whether receiving PDUs must not surpass the negotiated maximum PDU length.                              |
+| `CHRIS_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                      |
+| `CHRIS_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                       |                                                      
+| `PORT`                        | TCP port number to listen on                                                                            |
+
