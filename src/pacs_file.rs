@@ -20,6 +20,7 @@ use tracing::warn;
 
 use crate::error::MissingRequiredTag;
 use crate::patient_age::parse_age;
+use crate::sanitize::sanitize;
 
 #[derive(Serialize)]
 pub struct PacsFileRegistration {
@@ -137,7 +138,7 @@ fn ttr(dcm: &DefaultDicomObject, tag: Tag) -> Result<String, MissingRequiredTag>
 
 /// Optional string tag
 fn tts(dcm: &DefaultDicomObject, tag: Tag) -> Option<String> {
-    tt(dcm, tag).map(|s| s.replace('\0', ""))
+    tt(dcm, tag).map(|s| sanitize(s))
 }
 
 /// Try to get the trimmed string value of a DICOM object.

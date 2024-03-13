@@ -1055,6 +1055,7 @@ dependencies = [
  "dicom",
  "envmnt",
  "fs-err",
+ "regex",
  "reqwest",
  "rstest",
  "seahash",

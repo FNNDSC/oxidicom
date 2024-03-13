@@ -5,6 +5,7 @@ mod patient_age;
 mod scp;
 mod server;
 mod transfer;
+mod sanitize;
 
 pub use chris::ChrisPacsStorage;
 pub use error::ChrisPacsError;
