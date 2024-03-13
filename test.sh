@@ -19,9 +19,9 @@ docker run -v cargo-oxidicom-target:/target docker.io/library/rust:1.76-bookworm
 # group for permission to read files in $HERE
 exec docker run --rm $TTY --name cargo-chris-scp -u 1001:0 --group-add "$(id -g)" \
   --net=minichris-local \
-  -v minichris-docker_chris_files:/data:rw \
-  -v "$HERE:/src:ro" \
+  -v minichris-files:/data:rw \
   -v cargo-oxidicom-target:/target:rw \
+  -v "$HERE:/src:ro" \
   -w /src \
   -e CARGO_TARGET_DIR=/target \
   -e CHRIS_URL=http://chris:8000/api/v1/ \
