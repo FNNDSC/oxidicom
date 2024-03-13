@@ -14,19 +14,16 @@ use dicom::ul::pdu::{PDataValue, PDataValueType};
 use dicom::ul::{ClientAssociationOptions, Pdu};
 use snafu::{Report, ResultExt, Snafu};
 
-use crate::{CARGO_MANIFEST_DIR, EXAMPLE_DATA_DIR};
-
 /// Push files to a listener.
 ///
 /// Based on
 /// https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescu/src/main.rs
-pub fn dicom_client() {
-    run().unwrap()
+pub fn dicom_client(data_dir: Utf8PathBuf) {
+    run(&data_dir).unwrap()
 }
 
-pub fn get_test_files() -> Vec<Utf8PathBuf> {
-    let data_dir = Utf8Path::new(CARGO_MANIFEST_DIR).join(EXAMPLE_DATA_DIR);
-    let files: Vec<_> = walkdir::WalkDir::new(&data_dir)
+pub fn get_test_files(data_dir: &Utf8Path) -> Vec<Utf8PathBuf> {
+    let files: Vec<_> = walkdir::WalkDir::new(data_dir)
         .into_iter()
         .filter_map(Result::ok)
         .filter_map(|e| {
@@ -45,7 +42,7 @@ pub fn get_test_files() -> Vec<Utf8PathBuf> {
     files
 }
 
-fn run() -> Result<(), Error> {
+fn run(data_dir: &Utf8Path) -> Result<(), Error> {
     thread::sleep(Duration::from_secs(1)); // wait for server to start
 
     let addr = "127.0.0.1:11112".to_string();
@@ -55,7 +52,7 @@ fn run() -> Result<(), Error> {
     let max_pdu_length = 16384;
     let message_id = 1;
 
-    let checked_files = get_test_files();
+    let checked_files = get_test_files(data_dir);
 
     let mut dicom_files: Vec<DicomFile> = vec![];
     let mut presentation_contexts = HashSet::new();

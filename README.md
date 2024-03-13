@@ -44,3 +44,27 @@ Rewriting the functionality of `pfdcm` in Rust and with a modern design has led 
 | `CHRIS_SCP_THREADS`           | Connection thread pool size                                                                             |
 | `PORT`                        | TCP port number to listen on                                                                            |
 
+## Development
+
+The development scripts are hard-coded to work with an instance of _miniChRIS_.
+Follow these instructions to spin up the backend: 
+https://github.com/FNNDSC/miniChRIS-docker#readme
+
+To speak to _CUBE_, `oxidicom` needs to run in a Docker container in the same network and mounting
+the same volume as _CUBE_'s container. This is facilitated by the `run.sh` command whish is called
+by the `justfile`.
+
+### Tools
+
+You need to have installed:
+
+- Docker Compose
+- https://github.com/casey/just
+- [DCMTK](https://dicom.offis.de/dcmtk.php.en)
+
+### Run tests
+
+```shell
+just reset
+just test
+```

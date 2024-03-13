@@ -2,7 +2,7 @@ use crate::scp::handle_incoming_dicom;
 use crate::threads::ThreadPool;
 use crate::{ChrisPacsStorage, DicomRsConfig};
 use std::net::{SocketAddrV4, TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tracing::{error, info};
 
 /// `finite_connections` is a variable only used for testing. It tells the server to exit
