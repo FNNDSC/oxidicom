@@ -2,7 +2,7 @@ test:
     ./test.sh
 
 clean:
-    docker volume rm cargo-oxidicom-target
+    docker volume rm cargo-oxidicom-target cargo-oxidicom-home
 
 reset:
     ./reset.sh
