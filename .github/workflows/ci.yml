@@ -20,6 +20,9 @@ jobs:
     - uses: taiki-e/install-action@v2
       with:
         tool: just
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: chrs
     - name: Download sample data
       run: just get-data
     - name: Test
