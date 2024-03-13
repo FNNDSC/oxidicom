@@ -1,11 +1,13 @@
-
 /// Parse DICOM PatientAge to number of days.
 ///
 /// https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/pypx/register.py#L459-L465
 pub(crate) fn parse_age(age: &str) -> Option<u32> {
     for (suffix, coef) in &MULTIPLIERS {
         if let Some(left) = age.strip_suffix(suffix) {
-            return left.parse::<f32>().map(|num| (num * coef).round() as u32).ok()
+            return left
+                .parse::<f32>()
+                .map(|num| (num * coef).round() as u32)
+                .ok();
         }
     }
     None

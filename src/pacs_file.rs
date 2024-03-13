@@ -57,7 +57,7 @@ impl PacsFileRegistration {
         let SeriesInstanceUID = ttr(dcm, tags::SERIES_INSTANCE_UID)?;
         let SOPInstanceUID = ttr(dcm, tags::SOP_INSTANCE_UID)?;
         let PatientID = ttr(dcm, tags::PATIENT_ID)?;
-        let StudyDate = ttr(dcm, tags::STUDY_DATE)?;  // required by CUBE
+        let StudyDate = ttr(dcm, tags::STUDY_DATE)?; // required by CUBE
 
         // optional values
         let PatientName = tts(dcm, tags::PATIENT_NAME);
@@ -132,17 +132,16 @@ impl PacsFileRegistration {
 
 /// Required string tag
 fn ttr(dcm: &DefaultDicomObject, tag: Tag) -> Result<String, MissingRequiredTag> {
-    tt(dcm, tag)
-        .map(|s| s.to_string())
-        .ok_or_else(|| MissingRequiredTag(name_of(tag).unwrap()))
+    tts(dcm, tag).ok_or_else(|| MissingRequiredTag(name_of(tag)))
 }
 
 /// Optional string tag
 fn tts(dcm: &DefaultDicomObject, tag: Tag) -> Option<String> {
-    tt(dcm, tag).map(|s| s.to_string())
+    tt(dcm, tag).map(|s| s.replace('\0', ""))
 }
 
 /// Try to get the trimmed string value of a DICOM object.
+/// (This function is marginally more efficient than [tts].)
 fn tt(dcm: &DefaultDicomObject, tag: Tag) -> Option<&str> {
     dcm.element(tag)
         .ok()
@@ -150,11 +149,10 @@ fn tt(dcm: &DefaultDicomObject, tag: Tag) -> Option<&str> {
 }
 
 /// Get the standard name of a tag.
-fn name_of(tag: Tag) -> Option<&'static str> {
+fn name_of(tag: Tag) -> &'static str {
     // WHY SAG-anon has a DICOM tag (0019,0010)?
-    StandardDataDictionary.by_tag(tag).map(|e| e.alias)
+    StandardDataDictionary.by_tag(tag).map(|e| e.alias).unwrap()
 }
-
 
 /// Something that is maybe a [u32], but in case it's not valid, is a [String].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
