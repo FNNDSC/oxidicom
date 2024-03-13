@@ -1,8 +1,14 @@
+//! File mostly copied from dicom-rs.
+//!
+//! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs
+
+use camino::Utf8PathBuf;
 use std::{
     net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
     path::PathBuf,
 };
 
+use chris_scp::ChrisPacsStorage;
 use clap::Parser;
 use dicom::core::{dicom_value, DataElement, VR};
 use dicom::dictionary_std::tags;
@@ -44,7 +50,15 @@ struct App {
     port: u16,
 }
 
-fn run(scu_stream: TcpStream, args: &App) -> Result<(), Whatever> {
+async fn run(scu_stream: TcpStream, args: &App) -> Result<(), Whatever> {
+    let chris = ChrisPacsStorage::new(
+        "".to_string(),
+        "".to_string(),
+        "".to_string(),
+        Utf8PathBuf::from("./output"),
+        5,
+    );
+
     let App {
         verbose,
         calling_ae_title,
@@ -111,8 +125,7 @@ fn run(scu_stream: TcpStream, args: &App) -> Result<(), Whatever> {
                         } else if data[0].value_type == PDataValueType::Command && data[0].is_last {
                             // commands are always in implict VR LE
                             let ts =
-                                dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN
-                                    .erased();
+                                dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
                             let data_value = &data[0];
                             let v = &data_value.data;
 
@@ -180,7 +193,7 @@ fn run(scu_stream: TcpStream, args: &App) -> Result<(), Whatever> {
                                 instance_buffer.as_slice(),
                                 TransferSyntaxRegistry.get(ts).unwrap(),
                             )
-                                .whatever_context("failed to read DICOM data object")?;
+                            .whatever_context("failed to read DICOM data object")?;
                             let file_meta = FileMetaTableBuilder::new()
                                 .media_storage_sop_class_uid(
                                     obj.element(tags::SOP_CLASS_UID)
@@ -197,22 +210,14 @@ fn run(scu_stream: TcpStream, args: &App) -> Result<(), Whatever> {
                                 .transfer_syntax(ts)
                                 .build()
                                 .whatever_context("failed to build DICOM meta file information")?;
-                            let file_obj = obj.with_exact_meta(file_meta);
 
-                            // write the files to the current directory with their SOPInstanceUID as filenames
-                            let mut file_path = out_dir.clone();
-                            file_path
-                                .push(sop_instance_uid.trim_end_matches('\0').to_string() + ".dcm");
-                            file_obj
-                                .write_to_file(&file_path)
-                                .whatever_context("could not save DICOM object to file")?;
-                            info!("Stored {}", file_path.display());
+                            let file_obj = obj.with_exact_meta(file_meta);
+                            chris.store(file_obj, &sop_instance_uid).await.unwrap();
 
                             // send C-STORE-RSP object
                             // commands are always in implict VR LE
                             let ts =
-                                dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN
-                                    .erased();
+                                dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
                             let obj =
                                 create_cstore_response(msgid, &sop_class_uid, &sop_instance_uid);
@@ -313,7 +318,8 @@ fn create_cecho_response(message_id: u16) -> InMemDicomObject<StandardDataDictio
     ])
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = App::parse();
 
     tracing::subscriber::set_global_default(
@@ -325,12 +331,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .finish(),
     )
-        .unwrap_or_else(|e| {
-            eprintln!(
-                "Could not set up global logger: {}",
-                snafu::Report::from_error(e)
-            );
-        });
+    .unwrap_or_else(|e| {
+        eprintln!(
+            "Could not set up global logger: {}",
+            snafu::Report::from_error(e)
+        );
+    });
 
     std::fs::create_dir_all(&args.out_dir).unwrap_or_else(|e| {
         error!("Could not create output directory: {}", e);
@@ -347,7 +353,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for stream in listener.incoming() {
         match stream {
             Ok(scu_stream) => {
-                if let Err(e) = run(scu_stream, &args) {
+                if let Err(e) = run(scu_stream, &args).await {
                     error!("{}", snafu::Report::from_error(e));
                 }
             }

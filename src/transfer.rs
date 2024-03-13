@@ -1,4 +1,7 @@
-//! Accepted storage transfer options
+//! Accepted storage transfer options.
+//!
+//! Copied from dicom-rs.
+//! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/transfer.rs
 
 /// A list of supported abstract syntaxes for storage services
 pub static ABSTRACT_SYNTAXES: &[&str] = &[
