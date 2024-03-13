@@ -77,7 +77,6 @@ jobs:
         uses: docker/build-push-action@v5
         id: docker_build
         with:
-          file: ./pypx-DICOMweb.Dockerfile
           tags: ${{ steps.info.outputs.tags_csv }}
           push: true
           cache-from: type=gha
