@@ -3,12 +3,13 @@ use crate::{ChrisPacsStorage, DicomRsConfig};
 use std::net::{SocketAddrV4, TcpListener};
 use tracing::{error, info};
 
-/// `once` is a variable only used for testing.
+/// `finite_connections` is a variable only used for testing. It tells the server to exit
+/// after a finite number of connections, or on the first error.
 pub fn run_server(
     address: &SocketAddrV4,
     chris: ChrisPacsStorage,
     options: DicomRsConfig,
-    once: bool,
+    mut finite_connections: Option<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(address)?;
     info!("listening on: tcp://{}", address);
@@ -21,14 +22,16 @@ pub fn run_server(
                 }
             }
             Err(e) => {
-                if once {
-                    panic!("{}", snafu::Report::from_error(&e))
+                if finite_connections.is_some() {
+                    error!("{}", snafu::Report::from_error(&e));
+                    return Err(Box::new(e));
                 } else {
                     error!("{}", snafu::Report::from_error(&e));
                 }
             }
         }
-        if once {
+        finite_connections = finite_connections.map(|n| n - 1);
+        if finite_connections.map(|n| n == 0).unwrap_or(false) {
             break;
         }
     }

@@ -47,5 +47,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         uncompressed_only: envmnt::is_or("CHRIS_SCP_UNCOMPRESSED_ONLY", false),
         max_pdu_length: envmnt::get_u32("CHRIS_SCP_MAX_PDU_LENGTH", 16384),
     };
-    run_server(&address, chris, options, false)
+    run_server(&address, chris, options, None)
 }

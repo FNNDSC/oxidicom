@@ -60,7 +60,7 @@ fn run_server_for_test() {
         uncompressed_only: false,
         max_pdu_length: 16384,
     };
-    run_server(&address, chris, options, true).unwrap()
+    run_server(&address, chris, options, Some(1)).unwrap()
 }
 
 #[derive(serde::Deserialize)]
