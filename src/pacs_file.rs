@@ -1,3 +1,12 @@
+//! Request and response bodies for the CUBE `api/v1/pacsfiles/` API endpoint.
+//!
+//! ## Notes
+//!
+//! CUBE will normalize the DICOM DA format "YYYYMMDD" to "YYYY-MM-DD"
+//! (so it's not something we need to worry about).
+//!
+//! `PatientAge` should be in days.
+//! https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/pypx/register.py#L459-L465
 #![allow(non_snake_case)]
 
 use dicom::core::DataDictionary;
@@ -10,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::error::MissingRequiredTag;
+use crate::patient_age::parse_age;
 
 #[derive(Serialize)]
 pub struct PacsFileRegistration {
@@ -42,28 +52,41 @@ pub struct PacsFileRegistration {
 
 impl PacsFileRegistration {
     pub fn new(pacs_name: String, dcm: &DefaultDicomObject) -> Result<Self, MissingRequiredTag> {
+        // required fields
+        let StudyInstanceUID = ttr(dcm, tags::STUDY_INSTANCE_UID)?;
+        let SeriesInstanceUID = ttr(dcm, tags::SERIES_INSTANCE_UID)?;
+        let SOPInstanceUID = ttr(dcm, tags::SOP_INSTANCE_UID)?;
         let PatientID = ttr(dcm, tags::PATIENT_ID)?;
+        let StudyDate = ttr(dcm, tags::STUDY_DATE)?;  // required by CUBE
+
+        // optional values
         let PatientName = tts(dcm, tags::PATIENT_NAME);
         let PatientBirthDate = tts(dcm, tags::PATIENT_BIRTH_DATE);
         let StudyDescription = tts(dcm, tags::STUDY_DESCRIPTION);
         let AccessionNumber = tts(dcm, tags::ACCESSION_NUMBER);
-        let StudyDate = ttr(dcm, tags::STUDY_DATE)?;
-        let SeriesNumber = tt(dcm, tags::SERIES_NUMBER).map(MaybeU32::from);
         let SeriesDescription = tts(dcm, tags::SERIES_DESCRIPTION);
+
+        // SeriesNumber and InstanceNumber are not fields of a ChRIS PACSFile.
+        // They should be integers, and they also should appear in the fname.
         let InstanceNumber = tt(dcm, tags::INSTANCE_NUMBER).map(MaybeU32::from);
-        let SOPInstanceUID = tts(dcm, tags::SOP_INSTANCE_UID);
-        let SeriesInstanceUID = ttr(dcm, tags::SERIES_INSTANCE_UID)?;
+        let SeriesNumber = tt(dcm, tags::SERIES_NUMBER).map(MaybeU32::from);
+
+        // Numerical value
         let PatientAgeStr = tt(dcm, tags::PATIENT_AGE);
         let PatientAge = PatientAgeStr.and_then(|age| {
-            let num = age.parse::<u32>();
-            if num.is_err() {
+            let num = parse_age(age.trim());
+            if num.is_none() {
                 warn!(
-                    "SeriesInstanceUID={} SOPInstanceUID={:?}: PatientAge=\"{}\" is not a number.",
-                    &SeriesInstanceUID, &SOPInstanceUID, age
+                    StudyInstanceUID = &StudyInstanceUID,
+                    SeriesInstanceUID = &SeriesInstanceUID,
+                    SOPInstanceUID = &SOPInstanceUID,
+                    tag = "PatientAge",
+                    invalid_value = age
                 )
             };
-            num.ok()
+            num
         });
+
         // https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/bin/px-push#L175-L195
         let path = format!(
             "SERVICES/PACS/{}/{}-{}-{}-{}/{}-{}-{}/{:0>5}-{}-{}/{:0>4}-{}.dcm",
@@ -83,7 +106,7 @@ impl PacsFileRegistration {
             &hash(SeriesInstanceUID.as_str())[..7],
             // Instance
             InstanceNumber.unwrap_or_else(|| MaybeU32::String("InstanceNumber".to_string())),
-            SOPInstanceUID.as_deref().unwrap_or("SOPInstanceUID")
+            SOPInstanceUID
         );
 
         let pacs_file = Self {
@@ -91,7 +114,7 @@ impl PacsFileRegistration {
             pacs_name,
             PatientID,
             StudyDate,
-            StudyInstanceUID: ttr(dcm, tags::STUDY_INSTANCE_UID)?,
+            StudyInstanceUID,
             SeriesInstanceUID,
             PatientName,
             PatientBirthDate,
@@ -131,6 +154,7 @@ fn name_of(tag: Tag) -> Option<&'static str> {
     // WHY SAG-anon has a DICOM tag (0019,0010)?
     StandardDataDictionary.by_tag(tag).map(|e| e.alias)
 }
+
 
 /// Something that is maybe a [u32], but in case it's not valid, is a [String].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
