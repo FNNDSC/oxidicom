@@ -1,0 +1,14 @@
+/target
+/.idea
+/0219191_mystudy-0219-1114
+/FNNDSC-SAG-anon-3d6e850
+
+.git
+.gitignore
+Dockerfile
+.dockerignore
+
+README.md
+LICENSE
+justfile
+*.sh
