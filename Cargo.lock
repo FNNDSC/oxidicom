@@ -143,25 +143,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "chris-scp"
-version = "0.1.0"
-dependencies = [
- "camino",
- "dicom",
- "envmnt",
- "fs-err",
- "reqwest",
- "rstest",
- "seahash",
- "serde",
- "snafu 0.8.2",
- "thiserror",
- "tracing",
- "tracing-subscriber",
- "walkdir",
-]
-
-[[package]]
 name = "chrono"
 version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1064,6 +1045,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caff54706df99d2a78a5a4e3455ff45448d81ef1bb63c22cd14052ca0e993a3f"
 dependencies = [
  "supports-color",
+]
+
+[[package]]
+name = "oxidicom"
+version = "0.1.0"
+dependencies = [
+ "camino",
+ "dicom",
+ "envmnt",
+ "fs-err",
+ "reqwest",
+ "rstest",
+ "seahash",
+ "serde",
+ "snafu 0.8.2",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
+ "walkdir",
 ]
 
 [[package]]

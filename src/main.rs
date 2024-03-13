@@ -7,7 +7,7 @@ use std::net::{Ipv4Addr, SocketAddrV4};
 use camino::Utf8PathBuf;
 use tracing::Level;
 
-use chris_scp::{run_server, ChrisPacsStorage, DicomRsConfig};
+use oxidicom::{run_server, ChrisPacsStorage, DicomRsConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::subscriber::set_global_default(
@@ -35,10 +35,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         envmnt::get_u16("CHRIS_HTTP_RETRIES", 3),
     );
     let options = DicomRsConfig {
-        calling_ae_title: envmnt::get_or("CHRIS_AET", "ChRIS"),
+        calling_ae_title: envmnt::get_or("CHRIS_SCP_AET", "ChRIS"),
         strict: envmnt::is_or("CHRIS_SCP_STRICT", false),
         uncompressed_only: envmnt::is_or("CHRIS_SCP_UNCOMPRESSED_ONLY", false),
-        max_pdu_length: envmnt::get_u32("CHRIS_MAX_PDU_LENGTH", 16384),
+        max_pdu_length: envmnt::get_u32("CHRIS_SCP_MAX_PDU_LENGTH", 16384),
     };
     run_server(&address, chris, options, false)
 }

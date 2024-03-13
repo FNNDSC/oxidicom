@@ -2,7 +2,7 @@ test:
     ./test.sh
 
 clean:
-    docker volume rm cargo-chris-scp-target
+    docker volume rm cargo-oxidicom-target
 
 reset:
     ./reset.sh

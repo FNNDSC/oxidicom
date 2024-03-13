@@ -3,7 +3,7 @@ use std::thread;
 
 use camino::Utf8PathBuf;
 
-use chris_scp::{ChrisPacsStorage, DicomRsConfig, run_server};
+use oxidicom::{ChrisPacsStorage, DicomRsConfig, run_server};
 
 use crate::storescu::{dicom_client, get_test_files};
 
