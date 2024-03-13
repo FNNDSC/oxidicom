@@ -8,4 +8,11 @@ pub enum ChrisPacsError {
 
     #[error(transparent)]
     Write(#[from] dicom::object::WriteError),
+
+    #[error(transparent)]
+    MissingTag(#[from] MissingRequiredTag)
 }
+
+#[derive(thiserror::Error, Debug)]
+#[error("DICOM file does not have the required tag: \"{0}\"")]
+pub struct MissingRequiredTag(pub &'static str);

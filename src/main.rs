@@ -212,7 +212,7 @@ async fn run(scu_stream: TcpStream, args: &App) -> Result<(), Whatever> {
                                 .whatever_context("failed to build DICOM meta file information")?;
 
                             let file_obj = obj.with_exact_meta(file_meta);
-                            chris.store(file_obj, &sop_instance_uid).await.unwrap();
+                            chris.store(association.client_ae_title(), file_obj).await.unwrap();
 
                             // send C-STORE-RSP object
                             // commands are always in implict VR LE

@@ -1,8 +1,9 @@
 use camino::Utf8PathBuf;
-use dicom::object::{FileDicomObject, InMemDicomObject};
+use dicom::object::DefaultDicomObject;
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 
 use crate::error::ChrisPacsError;
+use crate::pacs_file::PACSFile;
 
 pub struct ChrisPacsStorage {
     client: reqwest_middleware::ClientWithMiddleware,
@@ -35,20 +36,17 @@ impl ChrisPacsStorage {
 
     pub async fn store(
         &self,
-        obj: FileDicomObject<InMemDicomObject>,
-        sop_instance_uid: &str,
+        pacs_name: &str,
+        obj: DefaultDicomObject,
     ) -> Result<(), ChrisPacsError> {
-        let dst = self
-            .dir
-            .join(format!("{}.dcm", sop_instance_uid.trim_end_matches('\0')));
+        let pacs_file = PACSFile::new(pacs_name.to_string(), &obj)?;
+        let dst = self.dir.join(&pacs_file.path);
         if let Some(parent) = dst.parent() {
             fs_err::tokio::create_dir_all(parent).await?;
         }
-
         tokio::task::spawn_blocking(move || {
             obj.write_to_file(dst)
         }).await??;
-
         Ok(())
     }
 }
