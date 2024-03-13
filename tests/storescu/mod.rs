@@ -6,12 +6,12 @@ use std::time::Duration;
 use camino::{Utf8Path, Utf8PathBuf};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
-use dicom::dictionary_std::{tags, uids, StandardDataDictionary};
+use dicom::dictionary_std::{StandardDataDictionary, tags, uids};
 use dicom::encoding::TransferSyntaxIndex;
-use dicom::object::{open_file, DefaultDicomObject, InMemDicomObject};
-use dicom::transfer_syntax::{TransferSyntax, TransferSyntaxRegistry};
-use dicom::ul::pdu::{PDataValue, PDataValueType};
+use dicom::object::{InMemDicomObject, open_file};
+use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom::ul::{ClientAssociationOptions, Pdu};
+use dicom::ul::pdu::{PDataValue, PDataValueType};
 use snafu::{Report, ResultExt, Snafu};
 
 use crate::{CARGO_MANIFEST_DIR, EXAMPLE_DATA_DIR};
@@ -141,7 +141,8 @@ fn run() -> Result<(), Error> {
             // .with_context(|| UnsupportedFileTransferSyntaxSnafu { uid: ts_uid_selected.to_string() })?;
 
             // transcode file if necessary
-            let dicom_file = into_ts(dicom_file, ts_selected)?;
+            // do not call this function, see https://github.com/Enet4/dicom-rs/issues/473
+            // let dicom_file = into_ts(dicom_file, ts_selected)?;
 
             dicom_file
                 .write_dataset_with_ts(&mut object_data, ts_selected)
@@ -403,17 +404,4 @@ enum Error {
         #[snafu(source(from(Box<dyn std::error::Error + 'static>, Some)))]
         source: Option<Box<dyn std::error::Error + 'static>>,
     },
-}
-
-fn into_ts(
-    dicom_file: DefaultDicomObject,
-    ts_selected: &TransferSyntax,
-) -> Result<DefaultDicomObject, Error> {
-    dbg!(ts_selected.uid());
-    dbg!(dicom_file.meta().transfer_syntax());
-    if ts_selected.uid() != dicom_file.meta().transfer_syntax() {
-        panic!("Transcoding feature is disabled, should not have tried to transcode")
-    } else {
-        Ok(dicom_file)
-    }
 }

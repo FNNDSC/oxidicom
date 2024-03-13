@@ -23,19 +23,7 @@ jobs:
     - name: Download sample data
       run: just get-data
     - name: Test
-      run: |
-        set +e
-        for attempt in {1..3}; do
-          just test
-          if [ "$?" = 0 ]; then
-            if [ "$attempt" != "1" ]; then
-              echo "::warning ::Tests took $attempt attempts."
-            fi
-            exit 0
-          fi
-          just reset
-        done
-        exit 1
+      run: just test
   build:
     name: Build
     runs-on: ubuntu-22.04
