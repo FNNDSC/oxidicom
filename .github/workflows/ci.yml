@@ -59,6 +59,8 @@ jobs:
     - uses: taiki-e/install-action@v2
       with:
         tool: just
+    - name: Download sample data
+      run: just get-data
     - name: Test
       run: just test
 
