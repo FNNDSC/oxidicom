@@ -41,5 +41,6 @@ Rewriting the functionality of `pfdcm` in Rust and with a modern design has led 
 | `CHRIS_SCP_STRICT`            | Whether receiving PDUs must not surpass the negotiated maximum PDU length.                              |
 | `CHRIS_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                      |
 | `CHRIS_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                       |                                                      
+| `CHRIS_SCP_THREADS`           | Connection thread pool size                                                                             |
 | `PORT`                        | TCP port number to listen on                                                                            |
 

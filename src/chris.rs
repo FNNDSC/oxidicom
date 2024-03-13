@@ -11,7 +11,7 @@ pub struct ChrisPacsStorage {
     username: String,
     password: String,
     dir: Utf8PathBuf,
-    pacs_name: Option<String>
+    pacs_name: Option<String>,
 }
 
 impl ChrisPacsStorage {
@@ -21,7 +21,7 @@ impl ChrisPacsStorage {
         password: String,
         dir: Utf8PathBuf,
         retries: u16,
-        pacs_name: Option<String>
+        pacs_name: Option<String>,
     ) -> Self {
         Self {
             url,
@@ -33,7 +33,7 @@ impl ChrisPacsStorage {
             password,
             dir,
             retries,
-            pacs_name
+            pacs_name,
         }
     }
 

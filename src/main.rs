@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         envmnt::get_or_panic("CHRIS_PASSWORD"),
         Utf8PathBuf::from(envmnt::get_or_panic("CHRIS_FILES_ROOT")),
         envmnt::get_u16("CHRIS_HTTP_RETRIES", 3),
-        pacs_name
+        pacs_name,
     );
     let options = DicomRsConfig {
         calling_ae_title: envmnt::get_or("CHRIS_SCP_AET", "ChRIS"),
@@ -47,5 +47,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         uncompressed_only: envmnt::is_or("CHRIS_SCP_UNCOMPRESSED_ONLY", false),
         max_pdu_length: envmnt::get_u32("CHRIS_SCP_MAX_PDU_LENGTH", 16384),
     };
-    run_server(&address, chris, options, None)
+    let n_threads = envmnt::get_usize("CHRIS_SCP_THREADS", 16);
+    run_server(&address, chris, options, None, n_threads)
 }

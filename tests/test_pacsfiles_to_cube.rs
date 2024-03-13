@@ -3,7 +3,7 @@ use std::thread;
 
 use camino::Utf8PathBuf;
 
-use oxidicom::{ChrisPacsStorage, DicomRsConfig, run_server};
+use oxidicom::{run_server, ChrisPacsStorage, DicomRsConfig};
 
 use crate::storescu::{dicom_client, get_test_files};
 
@@ -22,7 +22,8 @@ fn test_register_pacsfiles_to_cube() {
         tracing_subscriber::FmtSubscriber::builder()
             .with_max_level(tracing::Level::INFO)
             .finish(),
-    ).unwrap();
+    )
+    .unwrap();
 
     let server_thread = thread::spawn(run_server_for_test);
     let client_thread = thread::spawn(dicom_client);
@@ -34,7 +35,8 @@ fn test_register_pacsfiles_to_cube() {
         .use_rustls_tls()
         .build()
         .unwrap();
-    let response: PacsFilesList = client.get(CHRIS_PACSFILES_URL)
+    let response: PacsFilesList = client
+        .get(CHRIS_PACSFILES_URL)
         .basic_auth(CHRIS_USERNAME, Some(CHRIS_PASSWORD))
         .header(reqwest::header::ACCEPT, "application/json")
         .send()
@@ -52,7 +54,7 @@ fn run_server_for_test() {
         CHRIS_PASSWORD.to_string(),
         Utf8PathBuf::from(CHRIS_FILES_ROOT),
         3,
-        Some("THETESTPACS".to_string())
+        Some("THETESTPACS".to_string()),
     );
     let options = DicomRsConfig {
         calling_ae_title: "ChRISTEST".to_string(),
@@ -60,7 +62,7 @@ fn run_server_for_test() {
         uncompressed_only: false,
         max_pdu_length: 16384,
     };
-    run_server(&address, chris, options, Some(1)).unwrap()
+    run_server(&address, chris, options, Some(1), 2).unwrap()
 }
 
 #[derive(serde::Deserialize)]

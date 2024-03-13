@@ -6,12 +6,12 @@ use std::time::Duration;
 use camino::{Utf8Path, Utf8PathBuf};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
-use dicom::dictionary_std::{StandardDataDictionary, tags, uids};
+use dicom::dictionary_std::{tags, uids, StandardDataDictionary};
 use dicom::encoding::TransferSyntaxIndex;
-use dicom::object::{InMemDicomObject, open_file};
+use dicom::object::{open_file, InMemDicomObject};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
-use dicom::ul::{ClientAssociationOptions, Pdu};
 use dicom::ul::pdu::{PDataValue, PDataValueType};
+use dicom::ul::{ClientAssociationOptions, Pdu};
 use snafu::{Report, ResultExt, Snafu};
 
 use crate::{CARGO_MANIFEST_DIR, EXAMPLE_DATA_DIR};
