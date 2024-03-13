@@ -3,10 +3,7 @@
 //! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs
 
 use camino::Utf8PathBuf;
-use std::{
-    net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
-    path::PathBuf,
-};
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 
 use chris_scp::ChrisPacsStorage;
 use clap::Parser;
@@ -42,9 +39,6 @@ struct App {
     /// max pdu length
     #[arg(short = 'm', long = "max-pdu-length", default_value = "16384")]
     max_pdu_length: u32,
-    /// output directory for incoming objects
-    #[arg(short = 'o', default_value = ".")]
-    out_dir: PathBuf,
     /// Which port to listen on
     #[arg(short, default_value = "11111")]
     port: u16,
@@ -52,11 +46,11 @@ struct App {
 
 async fn run(scu_stream: TcpStream, args: &App) -> Result<(), Whatever> {
     let chris = ChrisPacsStorage::new(
-        "".to_string(),
-        "".to_string(),
-        "".to_string(),
-        Utf8PathBuf::from("./output"),
-        5,
+        "http://chris:8000/api/v1/pacsfiles/".to_string(),
+        "chris".to_string(),
+        "chris1234".to_string(),
+        Utf8PathBuf::from("/data"),
+        2,
     );
 
     let App {
@@ -65,7 +59,6 @@ async fn run(scu_stream: TcpStream, args: &App) -> Result<(), Whatever> {
         strict,
         uncompressed_only,
         max_pdu_length,
-        out_dir,
         port: _,
     } = args;
     let verbose = *verbose;
@@ -211,8 +204,18 @@ async fn run(scu_stream: TcpStream, args: &App) -> Result<(), Whatever> {
                                 .build()
                                 .whatever_context("failed to build DICOM meta file information")?;
 
+                            // CALL TO chris_scp.rs BEGINS HERE
+                            // --------------------------------------------------------------------------------
                             let file_obj = obj.with_exact_meta(file_meta);
-                            chris.store(association.client_ae_title(), file_obj).await.unwrap();
+                            let result = chris.store(association.client_ae_title(), file_obj).await;
+                            match result {
+                                Ok(pacs_file) => {
+                                    info!("SUCCESS: {} --> {}", &sop_instance_uid, pacs_file.url)
+                                }
+                                Err(e) => error!("{:?}", e),
+                            }
+                            // END OF ChRIS-RELATED CODE
+                            // --------------------------------------------------------------------------------
 
                             // send C-STORE-RSP object
                             // commands are always in implict VR LE
@@ -336,11 +339,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Could not set up global logger: {}",
             snafu::Report::from_error(e)
         );
-    });
-
-    std::fs::create_dir_all(&args.out_dir).unwrap_or_else(|e| {
-        error!("Could not create output directory: {}", e);
-        std::process::exit(-2);
     });
 
     let listen_addr = SocketAddrV4::new(Ipv4Addr::from(0), args.port);

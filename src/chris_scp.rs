@@ -2,8 +2,8 @@ use camino::Utf8PathBuf;
 use dicom::object::DefaultDicomObject;
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 
-use crate::error::ChrisPacsError;
-use crate::pacs_file::PACSFile;
+use crate::error::{check, ChrisPacsError};
+use crate::pacs_file::{PacsFileRegistration, PacsFileResponse};
 
 pub struct ChrisPacsStorage {
     client: reqwest_middleware::ClientWithMiddleware,
@@ -38,15 +38,36 @@ impl ChrisPacsStorage {
         &self,
         pacs_name: &str,
         obj: DefaultDicomObject,
-    ) -> Result<(), ChrisPacsError> {
-        let pacs_file = PACSFile::new(pacs_name.to_string(), &obj)?;
+    ) -> Result<PacsFileResponse, ChrisPacsError> {
+        let pacs_file = PacsFileRegistration::new(pacs_name.to_string(), &obj)?;
         let dst = self.dir.join(&pacs_file.path);
         if let Some(parent) = dst.parent() {
             fs_err::tokio::create_dir_all(parent).await?;
         }
-        tokio::task::spawn_blocking(move || {
-            obj.write_to_file(dst)
-        }).await??;
-        Ok(())
+        write_to_storage(obj, dst).await??;
+        self.register_file(&pacs_file).await
     }
+
+    async fn register_file(
+        &self,
+        file: &PacsFileRegistration,
+    ) -> Result<PacsFileResponse, ChrisPacsError> {
+        let res = self
+            .client
+            .post(&self.url)
+            .basic_auth(&self.username, Some(&self.password))
+            .header(reqwest::header::ACCEPT, "application/json")
+            .json(file)
+            .send()
+            .await?;
+        let data = check(res).await?.json().await?;
+        Ok(data)
+    }
+}
+
+async fn write_to_storage(
+    obj: DefaultDicomObject,
+    path: Utf8PathBuf,
+) -> Result<Result<(), dicom::object::WriteError>, tokio::task::JoinError> {
+    tokio::task::spawn_blocking(move || obj.write_to_file(path)).await
 }
