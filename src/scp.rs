@@ -20,6 +20,7 @@ use crate::transfer::ABSTRACT_SYNTAXES;
 
 pub struct DicomRsConfig {
     pub calling_ae_title: String,
+    /// Whether receiving PDUs must not surpass the negotiated maximum PDU length.
     pub strict: bool,
     pub uncompressed_only: bool,
     pub max_pdu_length: u32,

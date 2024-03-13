@@ -6,7 +6,7 @@ use crate::pacs_file::{PacsFileRegistration, PacsFileResponse};
 
 pub struct ChrisPacsStorage {
     client: reqwest::blocking::Client,
-    retries: u32,
+    retries: u16,
     url: String,
     username: String,
     password: String,
@@ -19,7 +19,7 @@ impl ChrisPacsStorage {
         username: String,
         password: String,
         dir: Utf8PathBuf,
-        retries: u32,
+        retries: u16,
     ) -> Self {
         Self {
             url,
