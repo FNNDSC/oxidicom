@@ -1,0 +1,87 @@
+# On push: build latest images
+
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+    tags:
+      - "v?[0-9]+.[0-9]+.[0-9]+*"
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test-and-build:
+    name: Test and Build
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Decide image tags
+      id: info
+      shell: python
+      run: |
+        import os
+        import itertools
+
+        def join_tag(t):
+          registry, repo, tag = t
+          return f'{registry}/{repo}:{tag}'.lower()
+
+        registries = ['docker.io', 'ghcr.io']
+        repos = ['${{ github.repository }}']
+        if '${{ github.ref_type }}' == 'branch':
+            tags = ['latest']
+        elif '${{ github.ref_type }}' == 'tag':
+            tag = '${{ github.ref_name }}'
+            version = tag[1:] if tag.startswith('v') else tag
+            tags = ['latest', version]
+        else:
+            tags = []
+
+        if '${{ github.ref_type }}' == 'tag':
+            local_tag = join_tag(('ghcr.io', '${{ github.repository }}', version))
+        else:
+            local_tag = join_tag(('localhost', '${{ github.repository }}', 'latest'))
+
+        product = itertools.product(registries, repos, tags)
+        tags_csv = ','.join(map(join_tag, product))
+        outputs = {
+            'tags_csv' : tags_csv,
+            'push'     : 'true' if tags_csv else 'false',
+            'local_tag': local_tag
+        }
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+            for k, v in outputs.items():
+                out.write(f'{k}={v}\n')
+
+    - uses: actions/checkout@v4
+    - uses: docker/setup-buildx-action@v3
+    - uses: FNNDSC/miniChRIS-docker@master
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: just
+    - name: Test
+      run: just test
+
+    - name: Login to DockerHub
+      if: github.event_name == 'push' || github.event_name == 'release'
+      id: dockerhub_login
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_PASSWORD }}
+    - name: Login to GitHub Container Registry
+      if: github.event_name == 'push' || github.event_name == 'release'
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build image
+      uses: docker/build-push-action@v5
+      id: docker_build
+      with:
+        file: ./pypx-DICOMweb.Dockerfile
+        tags: ${{ steps.info.outputs.tags }}
+        push: ${{ steps.info.outputs.push }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
