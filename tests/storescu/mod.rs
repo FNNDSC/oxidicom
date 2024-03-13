@@ -409,9 +409,9 @@ fn into_ts(
     dicom_file: DefaultDicomObject,
     ts_selected: &TransferSyntax,
 ) -> Result<DefaultDicomObject, Error> {
+    dbg!(ts_selected.uid());
+    dbg!(dicom_file.meta().transfer_syntax());
     if ts_selected.uid() != dicom_file.meta().transfer_syntax() {
-        dbg!(ts_selected.uid());
-        dbg!(dicom_file.meta().transfer_syntax());
         panic!("Transcoding feature is disabled, should not have tried to transcode")
     } else {
         Ok(dicom_file)
