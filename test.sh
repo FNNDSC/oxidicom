@@ -24,6 +24,6 @@ exec docker run --rm -it --name cargo-chris-scp -u 1001:0 --group-add "$(id -g)"
   -e CHRIS_USERNAME=chris \
   -e CHRIS_PASSWORD=chris1234 \
   -e CHRIS_FILES_ROOT=/data \
-  -p 11111:11111 \
+  -p 11112:11112 \
   docker.io/library/rust:1.76-bookworm \
   cargo test -- "$@"

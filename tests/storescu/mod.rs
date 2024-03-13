@@ -48,7 +48,7 @@ pub fn get_test_files() -> Vec<Utf8PathBuf> {
 fn run() -> Result<(), Error> {
     thread::sleep(Duration::from_secs(1)); // wait for server to start
 
-    let addr = "127.0.0.1:11111".to_string();
+    let addr = "127.0.0.1:11112".to_string();
     let never_transcode = false;
     let calling_ae_title = "STORE-SCU-TEST";
     let called_ae_title = "ChRISTEST";

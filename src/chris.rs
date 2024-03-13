@@ -11,6 +11,7 @@ pub struct ChrisPacsStorage {
     username: String,
     password: String,
     dir: Utf8PathBuf,
+    pacs_name: Option<String>
 }
 
 impl ChrisPacsStorage {
@@ -20,6 +21,7 @@ impl ChrisPacsStorage {
         password: String,
         dir: Utf8PathBuf,
         retries: u16,
+        pacs_name: Option<String>
     ) -> Self {
         Self {
             url,
@@ -31,6 +33,7 @@ impl ChrisPacsStorage {
             password,
             dir,
             retries,
+            pacs_name
         }
     }
 
@@ -39,6 +42,7 @@ impl ChrisPacsStorage {
         pacs_name: &str,
         obj: DefaultDicomObject,
     ) -> Result<PacsFileResponse, ChrisPacsError> {
+        let pacs_name = self.pacs_name.as_deref().unwrap_or(pacs_name);
         let pacs_file = PacsFileRegistration::new(pacs_name.to_string(), &obj)?;
         let dst = self.dir.join(&pacs_file.path);
         if let Some(parent) = dst.parent() {

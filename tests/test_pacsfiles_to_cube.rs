@@ -45,13 +45,14 @@ fn test_register_pacsfiles_to_cube() {
 }
 
 fn run_server_for_test() {
-    let address = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 11111);
+    let address = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 11112);
     let chris = ChrisPacsStorage::new(
         CHRIS_PACSFILES_URL.to_string(),
         CHRIS_USERNAME.to_string(),
         CHRIS_PASSWORD.to_string(),
         Utf8PathBuf::from(CHRIS_FILES_ROOT),
         3,
+        Some("THETESTPACS".to_string())
     );
     let options = DicomRsConfig {
         calling_ae_title: "ChRISTEST".to_string(),

@@ -27,12 +27,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let address = SocketAddrV4::new(Ipv4Addr::from(0), envmnt::get_u16("PORT", 11111));
+    let pacs_name = envmnt::get_or("CHRIS_PACS_NAME", "");
+    let pacs_name = if pacs_name.is_empty() {
+        None
+    } else {
+        Some(pacs_name)
+    };
     let chris = ChrisPacsStorage::new(
         format!("{}pacsfiles/", envmnt::get_or_panic("CHRIS_URL")),
         envmnt::get_or_panic("CHRIS_USERNAME"),
         envmnt::get_or_panic("CHRIS_PASSWORD"),
         Utf8PathBuf::from(envmnt::get_or_panic("CHRIS_FILES_ROOT")),
         envmnt::get_u16("CHRIS_HTTP_RETRIES", 3),
+        pacs_name
     );
     let options = DicomRsConfig {
         calling_ae_title: envmnt::get_or("CHRIS_SCP_AET", "ChRIS"),
