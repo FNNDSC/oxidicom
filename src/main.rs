@@ -2,18 +2,21 @@
 //!
 //! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs
 
-use std::env;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use camino::Utf8PathBuf;
 use tracing::Level;
 
-use chris_scp::{ChrisPacsStorage, DicomRsConfig, run_server};
+use chris_scp::{run_server, ChrisPacsStorage, DicomRsConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(if envmnt::is_or("CHRIS_VERBOSE", false) { Level::DEBUG } else { Level::INFO })
+            .with_max_level(if envmnt::is_or("CHRIS_VERBOSE", false) {
+                Level::DEBUG
+            } else {
+                Level::INFO
+            })
             .finish(),
     )
     .unwrap_or_else(|e| {
@@ -37,5 +40,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         uncompressed_only: envmnt::is_or("CHRIS_SCP_UNCOMPRESSED_ONLY", false),
         max_pdu_length: envmnt::get_u32("CHRIS_MAX_PDU_LENGTH", 16384),
     };
-    run_server(&address, chris, options)
+    run_server(&address, chris, options, false)
 }

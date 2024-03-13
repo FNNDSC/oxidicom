@@ -3,20 +3,19 @@
 //! File mostly copied from dicom-rs.
 //! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs
 
-use std::net::TcpStream;
-use camino::Utf8PathBuf;
+use crate::transfer::ABSTRACT_SYNTAXES;
+use crate::ChrisPacsStorage;
 use dicom::core::{DataElement, VR};
 use dicom::dicom_value;
-use dicom::dictionary_std::{StandardDataDictionary, tags};
+use dicom::dictionary_std::{tags, StandardDataDictionary};
 use dicom::encoding::TransferSyntaxIndex;
 use dicom::object::{FileMetaTableBuilder, InMemDicomObject};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
-use dicom::ul::Pdu;
 use dicom::ul::pdu::PDataValueType;
+use dicom::ul::Pdu;
 use snafu::{OptionExt, ResultExt, Whatever};
+use std::net::TcpStream;
 use tracing::{debug, error, info, warn};
-use crate::ChrisPacsStorage;
-use crate::transfer::ABSTRACT_SYNTAXES;
 
 pub struct DicomRsConfig {
     pub calling_ae_title: String,
@@ -26,15 +25,11 @@ pub struct DicomRsConfig {
     pub max_pdu_length: u32,
 }
 
-pub fn handle_incoming_dicom(scu_stream: TcpStream, chris: &ChrisPacsStorage, args: &DicomRsConfig) -> Result<(), Whatever> {
-    let chris = ChrisPacsStorage::new(
-        "http://chris:8000/api/v1/pacsfiles/".to_string(),
-        "chris".to_string(),
-        "chris1234".to_string(),
-        Utf8PathBuf::from("/data"),
-        2,
-    );
-
+pub fn handle_incoming_dicom(
+    scu_stream: TcpStream,
+    chris: &ChrisPacsStorage,
+    args: &DicomRsConfig,
+) -> Result<(), Whatever> {
     let DicomRsConfig {
         calling_ae_title,
         strict,
@@ -163,7 +158,7 @@ pub fn handle_incoming_dicom(scu_stream: TcpStream, chris: &ChrisPacsStorage, ar
                                 instance_buffer.as_slice(),
                                 TransferSyntaxRegistry.get(ts).unwrap(),
                             )
-                                .whatever_context("failed to read DICOM data object")?;
+                            .whatever_context("failed to read DICOM data object")?;
                             let file_meta = FileMetaTableBuilder::new()
                                 .media_storage_sop_class_uid(
                                     obj.element(tags::SOP_CLASS_UID)

@@ -23,11 +23,14 @@ impl ChrisPacsStorage {
     ) -> Self {
         Self {
             url,
-            client: reqwest::blocking::ClientBuilder::new().use_rustls_tls().build().unwrap(),
+            client: reqwest::blocking::ClientBuilder::new()
+                .use_rustls_tls()
+                .build()
+                .unwrap(),
             username,
             password,
             dir,
-            retries
+            retries,
         }
     }
 

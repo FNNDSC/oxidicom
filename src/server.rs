@@ -1,9 +1,15 @@
+use crate::scp::handle_incoming_dicom;
+use crate::{ChrisPacsStorage, DicomRsConfig};
 use std::net::{SocketAddrV4, TcpListener};
 use tracing::{error, info};
-use crate::{ChrisPacsStorage, DicomRsConfig};
-use crate::scp::handle_incoming_dicom;
 
-pub fn run_server(address: &SocketAddrV4, chris: ChrisPacsStorage, options: DicomRsConfig) -> Result<(), Box<dyn std::error::Error>> {
+/// `once` is a variable only used for testing.
+pub fn run_server(
+    address: &SocketAddrV4,
+    chris: ChrisPacsStorage,
+    options: DicomRsConfig,
+    once: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(address)?;
     info!("listening on: tcp://{}", address);
 
@@ -15,10 +21,16 @@ pub fn run_server(address: &SocketAddrV4, chris: ChrisPacsStorage, options: Dico
                 }
             }
             Err(e) => {
-                error!("{}", snafu::Report::from_error(e));
+                if once {
+                    panic!("{}", snafu::Report::from_error(&e))
+                } else {
+                    error!("{}", snafu::Report::from_error(&e));
+                }
             }
         }
+        if once {
+            break;
+        }
     }
-
     Ok(())
 }

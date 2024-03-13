@@ -3,8 +3,8 @@ mod error;
 mod pacs_file;
 mod patient_age;
 mod scp;
-mod transfer;
 mod server;
+mod transfer;
 
 pub use chris::ChrisPacsStorage;
 pub use error::ChrisPacsError;
