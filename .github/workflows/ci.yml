@@ -40,7 +40,7 @@ jobs:
             return f'{registry}/{repo}:{tag}'.lower()
           
           registries = ['docker.io', 'ghcr.io']
-          repos = ['${{ github.repository }}']
+          repos = ['${{ github.repository }}'.lower()]
           if '${{ github.ref_type }}' == 'branch':
               tags = ['latest']
           elif '${{ github.ref_type }}' == 'tag':
@@ -49,18 +49,11 @@ jobs:
               tags = ['latest', version]
           else:
               tags = []
-          
-          if '${{ github.ref_type }}' == 'tag':
-              local_tag = join_tag(('ghcr.io', '${{ github.repository }}', version))
-          else:
-              local_tag = join_tag(('localhost', '${{ github.repository }}', 'latest'))
-          
+
           product = itertools.product(registries, repos, tags)
           tags_csv = ','.join(map(join_tag, product))
           outputs = {
               'tags_csv' : tags_csv,
-              'push'     : 'true' if tags_csv else 'false',
-              'local_tag': local_tag
           }
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
               for k, v in outputs.items():
@@ -85,7 +78,7 @@ jobs:
         id: docker_build
         with:
           file: ./pypx-DICOMweb.Dockerfile
-          tags: ${{ steps.info.outputs.tags }}
-          push: ${{ steps.info.outputs.push }}
+          tags: ${{ steps.info.outputs.tags_csv }}
+          push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
