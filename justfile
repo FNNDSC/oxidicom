@@ -12,6 +12,7 @@ dev:
 
 kill:
     docker kill cargo-chris-scp
+    docker container rm cargo-chris-scp
 
 get-data:
     curl -fL 'https://api.github.com/repos/FNNDSC/SAG-anon/tarball/3d6e850b625e940aab02f0120cf5fb15977216bc' | tar xz
