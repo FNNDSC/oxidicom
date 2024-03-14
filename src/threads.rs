@@ -3,7 +3,6 @@
 
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use tracing::{info, info_span};
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
@@ -26,7 +25,10 @@ impl ThreadPool {
             .map(|id| Worker::new(id, Arc::clone(&receiver)))
             .collect();
 
-        ThreadPool { workers, sender: Some(sender) }
+        ThreadPool {
+            workers,
+            sender: Some(sender),
+        }
     }
 
     /// Run a job on in this thread pool.
@@ -35,7 +37,11 @@ impl ThreadPool {
         F: FnOnce() + Send + 'static,
     {
         let job = Box::new(f);
-        self.sender.as_ref().expect("thread pool has been shut down").send(job).unwrap();
+        self.sender
+            .as_ref()
+            .expect("thread pool has been shut down")
+            .send(job)
+            .unwrap();
     }
 
     /// Close the thread pool.
@@ -45,7 +51,6 @@ impl ThreadPool {
     pub fn shutdown(&mut self) {
         drop(self.sender.take());
         for worker in &mut self.workers {
-            println!("Shutting down worker {}", worker.id);
             if let Some(thread) = worker.thread.take() {
                 thread.join().unwrap();
             }
@@ -55,23 +60,21 @@ impl ThreadPool {
 
 struct Worker {
     id: usize,
-    thread: Option<thread::JoinHandle<()>>
+    thread: Option<thread::JoinHandle<()>>,
 }
 
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
         let thread = thread::spawn(move || {
-            info!(thread = id, state = "started");
+            eprintln!("Starting worker {id}");
             loop {
                 let message = receiver.lock().unwrap().recv();
                 match message {
                     Ok(job) => {
-                        let span = info_span!("thread_job", thread = id);
-                        let _enter = span.enter();
                         job();
                     }
                     Err(_) => {
-                        info!(thread = id, state = "shutdown");
+                        eprintln!("Shutting down worker {id}");
                         break;
                     }
                 }

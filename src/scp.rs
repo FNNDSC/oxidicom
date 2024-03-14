@@ -3,6 +3,7 @@
 //! File mostly copied from dicom-rs.
 //! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs
 
+use crate::association_error::{AssociationError, AssociationError::*};
 use crate::transfer::ABSTRACT_SYNTAXES;
 use crate::ChrisPacsStorage;
 use dicom::core::{DataElement, VR};
@@ -13,9 +14,9 @@ use dicom::object::{FileMetaTableBuilder, InMemDicomObject};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom::ul::pdu::PDataValueType;
 use dicom::ul::Pdu;
-use snafu::{OptionExt, ResultExt, Whatever};
+use opentelemetry::trace::TraceContextExt;
+use opentelemetry::KeyValue;
 use std::net::TcpStream;
-use tracing::{debug, error, info, warn};
 
 pub struct DicomRsConfig {
     pub calling_ae_title: String,
@@ -29,7 +30,9 @@ pub fn handle_incoming_dicom(
     scu_stream: TcpStream,
     chris: &ChrisPacsStorage,
     args: &DicomRsConfig,
-) -> Result<(), Whatever> {
+) -> Result<(), AssociationError> {
+    let context = opentelemetry::Context::current();
+
     let DicomRsConfig {
         calling_ae_title,
         strict,
@@ -64,15 +67,17 @@ pub fn handle_incoming_dicom(
         options = options.with_abstract_syntax(*uid);
     }
 
-    let mut association = options
-        .establish(scu_stream)
-        .whatever_context("could not establish association")?;
+    let mut association = options.establish(scu_stream).map_err(CouldNotEstablish)?;
 
-    info!("New association from {}", association.client_ae_title());
-    debug!(
-        "> Presentation contexts: {:?}",
-        association.presentation_contexts()
-    );
+    context.span().set_attribute(KeyValue::new(
+        "aet",
+        association.client_ae_title().to_string(),
+    ));
+
+    // debug!(
+    //     "> Presentation contexts: {:?}",
+    //     association.presentation_contexts()
+    // );
 
     loop {
         match association.receive() {
@@ -81,7 +86,7 @@ pub fn handle_incoming_dicom(
                 match pdu {
                     Pdu::PData { ref mut data } => {
                         if data.is_empty() {
-                            debug!("Ignoring empty PData PDU");
+                            // debug!("Ignoring empty PData PDU");
                             continue;
                         }
 
@@ -95,12 +100,12 @@ pub fn handle_incoming_dicom(
                             let v = &data_value.data;
 
                             let obj = InMemDicomObject::read_dataset_with_ts(v.as_slice(), &ts)
-                                .whatever_context("failed to read incoming DICOM command")?;
+                                .map_err(FailedToReadCommand)?;
                             let command_field = obj
                                 .element(tags::COMMAND_FIELD)
-                                .whatever_context("Missing Command Field")?
+                                .map_err(|_| MissingTag(tags::COMMAND_FIELD))?
                                 .uint16()
-                                .whatever_context("Command Field is not an integer")?;
+                                .map_err(|_| InvalidNumber(tags::COMMAND_FIELD))?;
 
                             if command_field == 0x0030 {
                                 // Handle C-ECHO-RQ
@@ -109,7 +114,9 @@ pub fn handle_incoming_dicom(
 
                                 cecho_response
                                     .write_dataset_with_ts(&mut cecho_data, &ts)
-                                    .whatever_context("could not write C-ECHO response object")?;
+                                    .map_err(|_| {
+                                        CannotRespond("Could not write C-ECHO response object")
+                                    })?;
 
                                 let pdu_response = Pdu::PData {
                                     data: vec![dicom::ul::pdu::PDataValue {
@@ -119,28 +126,26 @@ pub fn handle_incoming_dicom(
                                         data: cecho_data,
                                     }],
                                 };
-                                association.send(&pdu_response).whatever_context(
-                                    "failed to send C-ECHO response object to SCU",
-                                )?;
+                                association.send(&pdu_response).map_err(|_| {
+                                    CannotRespond("failed to send C-ECHO response object to SCU")
+                                })?;
                             } else {
                                 msgid = obj
                                     .element(tags::MESSAGE_ID)
-                                    .whatever_context("Missing Message ID")?
+                                    .map_err(|_| MissingTag(tags::MESSAGE_ID))?
                                     .to_int()
-                                    .whatever_context("Message ID is not an integer")?;
+                                    .map_err(|_| InvalidNumber(tags::MESSAGE_ID))?;
                                 sop_class_uid = obj
                                     .element(tags::AFFECTED_SOP_CLASS_UID)
-                                    .whatever_context("missing Affected SOP Class UID")?
+                                    .map_err(|_| MissingTag(tags::AFFECTED_SOP_CLASS_UID))?
                                     .to_str()
-                                    .whatever_context("could not retrieve Affected SOP Class UID")?
+                                    .map_err(|_| CouldNotRetrieve(tags::AFFECTED_SOP_CLASS_UID))?
                                     .to_string();
                                 sop_instance_uid = obj
                                     .element(tags::AFFECTED_SOP_INSTANCE_UID)
-                                    .whatever_context("missing Affected SOP Instance UID")?
+                                    .map_err(|_| MissingTag(tags::AFFECTED_SOP_INSTANCE_UID))?
                                     .to_str()
-                                    .whatever_context(
-                                        "could not retrieve Affected SOP Instance UID",
-                                    )?
+                                    .map_err(|_| CouldNotRetrieve(tags::AFFECTED_SOP_INSTANCE_UID))?
                                     .to_string();
                             }
                             instance_buffer.clear();
@@ -151,30 +156,30 @@ pub fn handle_incoming_dicom(
                                 .presentation_contexts()
                                 .iter()
                                 .find(|pc| pc.id == data[0].presentation_context_id)
-                                .whatever_context("missing presentation context")?;
+                                .ok_or(MissingPresentationContext)?;
                             let ts = &presentation_context.transfer_syntax;
 
                             let obj = InMemDicomObject::read_dataset_with_ts(
                                 instance_buffer.as_slice(),
                                 TransferSyntaxRegistry.get(ts).unwrap(),
                             )
-                            .whatever_context("failed to read DICOM data object")?;
+                            .map_err(FailedToReadObject)?;
                             let file_meta = FileMetaTableBuilder::new()
                                 .media_storage_sop_class_uid(
                                     obj.element(tags::SOP_CLASS_UID)
-                                        .whatever_context("missing SOP Class UID")?
+                                        .map_err(|_| MissingTag(tags::SOP_CLASS_UID))?
                                         .to_str()
-                                        .whatever_context("could not retrieve SOP Class UID")?,
+                                        .map_err(|_| CouldNotRetrieve(tags::SOP_CLASS_UID))?,
                                 )
                                 .media_storage_sop_instance_uid(
                                     obj.element(tags::SOP_INSTANCE_UID)
-                                        .whatever_context("missing SOP Instance UID")?
+                                        .map_err(|_| MissingTag(tags::SOP_INSTANCE_UID))?
                                         .to_str()
-                                        .whatever_context("missing SOP Instance UID")?,
+                                        .map_err(|_| CouldNotRetrieve(tags::SOP_INSTANCE_UID))?,
                                 )
                                 .transfer_syntax(ts)
                                 .build()
-                                .whatever_context("failed to build DICOM meta file information")?;
+                                .map_err(FailedToBuildMeta)?;
 
                             // CALL TO chris BEGINS HERE
                             // --------------------------------------------------------------------------------
@@ -182,14 +187,24 @@ pub fn handle_incoming_dicom(
                             let result = chris.store(association.client_ae_title(), file_obj);
                             match result {
                                 Ok(pacs_file) => {
-                                    info!(
-                                        register = "success",
-                                        SeriesInstanceUID = pacs_file.SeriesInstanceUID,
-                                        fname = pacs_file.fname,
-                                        url = pacs_file.url
-                                    )
+                                    let a = vec![
+                                        KeyValue::new("success", true),
+                                        KeyValue::new(
+                                            "SeriesInstanceUID",
+                                            pacs_file.SeriesInstanceUID,
+                                        ),
+                                        KeyValue::new("fname", pacs_file.fname),
+                                        KeyValue::new("url", pacs_file.url),
+                                    ];
+                                    context.span().add_event("register_to_chris", a);
                                 }
-                                Err(e) => error!("{:?}", e),
+                                Err(e) => {
+                                    let a = vec![
+                                        KeyValue::new("success", false),
+                                        KeyValue::new("error", e.to_string()),
+                                    ];
+                                    context.span().add_event("register_to_chris", a);
+                                }
                             }
                             // END OF ChRIS-RELATED CODE
                             // --------------------------------------------------------------------------------
@@ -205,7 +220,7 @@ pub fn handle_incoming_dicom(
                             let mut obj_data = Vec::new();
 
                             obj.write_dataset_with_ts(&mut obj_data, &ts)
-                                .whatever_context("could not write response object")?;
+                                .map_err(|_| CannotRespond("could not write response object"))?;
 
                             let pdu_response = Pdu::PData {
                                 data: vec![dicom::ul::pdu::PDataValue {
@@ -215,38 +230,38 @@ pub fn handle_incoming_dicom(
                                     data: obj_data,
                                 }],
                             };
-                            association
-                                .send(&pdu_response)
-                                .whatever_context("failed to send response object to SCU")?;
+                            association.send(&pdu_response).map_err(|_| {
+                                CannotRespond("failed to send response object to SCU")
+                            })?;
                         }
                     }
                     Pdu::ReleaseRQ => {
                         buffer.clear();
                         association.send(&Pdu::ReleaseRP).unwrap_or_else(|e| {
-                            warn!(
-                                "Failed to send association release message to SCU: {}",
-                                snafu::Report::from_error(e)
-                            );
+                            // warn!(
+                            //     "Failed to send association release message to SCU: {}",
+                            //     snafu::Report::from_error(e)
+                            // );
                         });
-                        info!(
-                            "Released association with {}",
-                            association.client_ae_title()
-                        );
+                        // info!(
+                        //     "Released association with {}",
+                        //     association.client_ae_title()
+                        // );
                     }
                     _ => {}
                 }
             }
             Err(err @ dicom::ul::association::server::Error::Receive { .. }) => {
-                debug!("{}", err);
+                // debug!("{}", err);
                 break;
             }
             Err(err) => {
-                warn!("Unexpected error: {}", snafu::Report::from_error(err));
+                // warn!("Unexpected error: {}", snafu::Report::from_error(err));
                 break;
             }
         }
     }
-    info!("Dropping connection with {}", association.client_ae_title());
+    // info!("Dropping connection with {}", association.client_ae_title());
     Ok(())
 }
 

@@ -44,8 +44,8 @@ pub fn get_test_files(data_dir: &Utf8Path) -> Vec<Utf8PathBuf> {
 
 fn run(data_dir: &Utf8Path) -> Result<(), Error> {
     thread::sleep(Duration::from_secs(1)); // wait for server to start
-
-    let addr = "127.0.0.1:11112".to_string();
+    let port = envmnt::get_i16("PORT", 11112);
+    let addr = format!("127.0.0.1:{port}");
     let never_transcode = false;
     let calling_ae_title = "STORE-SCU-TEST";
     let called_ae_title = "ChRISTEST";
@@ -251,6 +251,7 @@ fn run(data_dir: &Utf8Path) -> Result<(), Error> {
                     panic!("Unexpected SCP response: {:?}", pdu);
                 }
             }
+            eprintln!("Client sent {}", &file.file);
         }
     }
 

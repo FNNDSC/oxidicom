@@ -21,10 +21,12 @@ docker run \
     docker.io/library/rust:1.76-bookworm \
     chmod g+rwx /target /cargo
 
+chmod g+r Cargo.lock Cargo.toml
+
 # run container as the same container user as CUBE container, but also with host user
 # group for permission to read files in $HERE
 exec docker run --rm $TTY --name cargo-chris-scp -u 1001:0 --group-add "$(id -g)" \
-  --net=minichris-local \
+  --net=host \
   -v cargo-oxidicom-target:/target \
   -v cargo-oxidicom-home:/cargo \
   -e CARGO_TARGET_DIR=/target \
@@ -33,10 +35,9 @@ exec docker run --rm $TTY --name cargo-chris-scp -u 1001:0 --group-add "$(id -g)
   -w /src \
   -v minichris-files:/data:rw \
   -e CHRIS_FILES_ROOT=/data \
-  -e CHRIS_URL=http://chris:8000/api/v1/ \
+  -e CHRIS_URL=http://localhost:8000/api/v1/ \
   -e CHRIS_USERNAME=chris \
   -e CHRIS_PASSWORD=chris1234 \
   -e PORT=11112 \
-  -p 11112:11112 \
   docker.io/library/rust:1.76-bookworm \
   cargo "$cmd" -- "$@"

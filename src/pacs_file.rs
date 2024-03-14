@@ -16,7 +16,6 @@ use std::fmt::Display;
 use dicom::dictionary_std::tags;
 use dicom::object::{DefaultDicomObject, StandardDataDictionary, Tag};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 
 use crate::error::MissingRequiredTag;
 use crate::patient_age::parse_age;
@@ -77,13 +76,13 @@ impl PacsFileRegistration {
         let PatientAge = PatientAgeStr.and_then(|age| {
             let num = parse_age(age.trim());
             if num.is_none() {
-                warn!(
-                    StudyInstanceUID = &StudyInstanceUID,
-                    SeriesInstanceUID = &SeriesInstanceUID,
-                    SOPInstanceUID = &SOPInstanceUID,
-                    tag = "PatientAge",
-                    invalid_value = age
-                )
+                // warn!(
+                //     StudyInstanceUID = &StudyInstanceUID,
+                //     SeriesInstanceUID = &SeriesInstanceUID,
+                //     SOPInstanceUID = &SOPInstanceUID,
+                //     tag = "PatientAge",
+                //     invalid_value = age
+                // )
             };
             num
         });
@@ -150,7 +149,7 @@ fn tt(dcm: &DefaultDicomObject, tag: Tag) -> Option<&str> {
 }
 
 /// Get the standard name of a tag.
-fn name_of(tag: Tag) -> &'static str {
+pub(crate) fn name_of(tag: Tag) -> &'static str {
     // WHY SAG-anon has a DICOM tag (0019,0010)?
     StandardDataDictionary.by_tag(tag).map(|e| e.alias).unwrap()
 }

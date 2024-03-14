@@ -1,9 +1,10 @@
 use crate::scp::handle_incoming_dicom;
 use crate::threads::ThreadPool;
 use crate::{ChrisPacsStorage, DicomRsConfig};
+use opentelemetry::trace::{Status, TraceContextExt, Tracer};
+use opentelemetry::{global, KeyValue};
 use std::net::{SocketAddrV4, TcpListener, TcpStream};
 use std::sync::Arc;
-use tracing::{error, info};
 
 /// `finite_connections` is a variable only used for testing. It tells the server to exit
 /// after a finite number of connections, or on the first error.
@@ -15,7 +16,7 @@ pub fn run_server(
     n_threads: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(address)?;
-    info!("listening on: tcp://{}", address);
+    eprintln!("listening on: tcp://{}", address);
 
     let mut pool = ThreadPool::new(n_threads);
     let chris = Arc::new(chris);
@@ -27,26 +28,26 @@ pub fn run_server(
         } else {
             Box::new(listener.incoming())
         };
-
+    let tracer = global::tracer(env!("CARGO_PKG_NAME"));
     for stream in incoming {
-        match stream {
+        tracer.in_span("association", |cx| match stream {
             Ok(scu_stream) => {
+                if let Ok(address) = scu_stream.peer_addr() {
+                    cx.span()
+                        .set_attribute(KeyValue::new("address", address.to_string()));
+                }
                 let chris = Arc::clone(&chris);
                 let options = Arc::clone(&options);
                 pool.execute(move || {
                     if let Err(e) = handle_incoming_dicom(scu_stream, &chris, &options) {
-                        error!("{}", snafu::Report::from_error(e));
+                        cx.span().set_status(Status::error(e.to_string()))
+                    } else {
+                        cx.span().set_status(Status::Ok)
                     }
                 });
             }
-            Err(e) => {
-                if finite_connections.is_some() {
-                    error!("{}", snafu::Report::from_error(&e));
-                } else {
-                    error!("{}", snafu::Report::from_error(&e));
-                }
-            }
-        }
+            Err(e) => cx.span().set_status(Status::error(e.to_string())),
+        })
     }
     pool.shutdown();
     Ok(())

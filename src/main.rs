@@ -2,51 +2,27 @@
 //!
 //! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs
 
-use std::net::{Ipv4Addr, SocketAddrV4};
+use opentelemetry::global;
+use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::trace::TracerProvider;
 
-use camino::Utf8PathBuf;
-use tracing::Level;
-
-use oxidicom::{run_server, ChrisPacsStorage, DicomRsConfig};
+use oxidicom::run_server_from_env;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(if envmnt::is_or("CHRIS_VERBOSE", false) {
-                Level::DEBUG
-            } else {
-                Level::INFO
-            })
-            .finish(),
-    )
-    .unwrap_or_else(|e| {
-        eprintln!(
-            "Could not set up global logger: {}",
-            snafu::Report::from_error(e)
-        );
-    });
+    init_tracing().unwrap();
+    let result = run_server_from_env(None, None);
+    global::shutdown_tracer_provider();
+    result
+}
 
-    let address = SocketAddrV4::new(Ipv4Addr::from(0), envmnt::get_u16("PORT", 11111));
-    let pacs_name = envmnt::get_or("CHRIS_PACS_NAME", "");
-    let pacs_name = if pacs_name.is_empty() {
-        None
-    } else {
-        Some(pacs_name)
-    };
-    let chris = ChrisPacsStorage::new(
-        format!("{}pacsfiles/", envmnt::get_or_panic("CHRIS_URL")),
-        envmnt::get_or_panic("CHRIS_USERNAME"),
-        envmnt::get_or_panic("CHRIS_PASSWORD"),
-        Utf8PathBuf::from(envmnt::get_or_panic("CHRIS_FILES_ROOT")),
-        envmnt::get_u16("CHRIS_HTTP_RETRIES", 3),
-        pacs_name,
-    );
-    let options = DicomRsConfig {
-        calling_ae_title: envmnt::get_or("CHRIS_SCP_AET", "ChRIS"),
-        strict: envmnt::is_or("CHRIS_SCP_STRICT", false),
-        uncompressed_only: envmnt::is_or("CHRIS_SCP_UNCOMPRESSED_ONLY", false),
-        max_pdu_length: envmnt::get_u32("CHRIS_SCP_MAX_PDU_LENGTH", 16384),
-    };
-    let n_threads = envmnt::get_usize("CHRIS_SCP_THREADS", 16);
-    run_server(&address, chris, options, None, n_threads)
+fn init_tracing() -> Result<(), opentelemetry::trace::TraceError> {
+    global::set_text_map_propagator(TraceContextPropagator::new());
+    let exporter = opentelemetry_otlp::new_exporter()
+        .http()
+        .build_span_exporter()?;
+    let provider = TracerProvider::builder()
+        .with_simple_exporter(exporter)
+        .build();
+    global::set_tracer_provider(provider);
+    Ok(())
 }
