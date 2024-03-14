@@ -1,0 +1,18 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  otlphttp/openobserve:
+    endpoint: http://openobserve:5080/api/default/
+    headers:
+      Authorization: Basic ZGV2QGJhYnltcmkub3JnOmNocmlzMTIzNA==
+      stream-name: default
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp/openobserve]
