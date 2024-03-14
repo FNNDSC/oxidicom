@@ -100,13 +100,12 @@ impl PacsFileRegistration {
 
         // https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/bin/px-push#L175-L195
         let path = format!(
-            "SERVICES/PACS/{}/{}-{}-{}-{}/{}-{}-{}/{:0>5}-{}-{}/{:0>4}-{}.dcm",
+            "SERVICES/PACS/{}/{}-{}-{}/{}-{}-{}/{:0>5}-{}-{}/{:0>4}-{}.dcm",
             &pacs_name,
             // Patient
             PatientID.as_str(),
             PatientName.as_deref().unwrap_or(""),
             PatientBirthDate.as_deref().unwrap_or(""),
-            PatientAgeStr.unwrap_or(""),
             // Study
             StudyDescription.as_deref().unwrap_or("StudyDescription"),
             AccessionNumber.as_deref().unwrap_or("AccessionNumber"),
