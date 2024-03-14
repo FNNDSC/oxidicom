@@ -14,7 +14,7 @@ use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom::ul::pdu::PDataValueType;
 use dicom::ul::Pdu;
 use opentelemetry::trace::TraceContextExt;
-use opentelemetry::KeyValue;
+use opentelemetry::{Array, KeyValue, StringValue, Value};
 
 use crate::association_error::{AssociationError, AssociationError::*};
 use crate::transfer::ABSTRACT_SYNTAXES;
@@ -183,13 +183,21 @@ pub fn handle_incoming_dicom(
                     let file_obj = obj.with_exact_meta(file_meta);
                     let result = chris.store(association.client_ae_title(), file_obj);
                     match result {
-                        Ok(pacs_file) => {
-                            let a = vec![
+                        Ok((pacs_file, bad_tags)) => {
+                            let mut a = vec![
                                 KeyValue::new("success", true),
                                 KeyValue::new("SeriesInstanceUID", pacs_file.SeriesInstanceUID),
                                 KeyValue::new("fname", pacs_file.fname),
                                 KeyValue::new("url", pacs_file.url),
                             ];
+                            if !bad_tags.is_empty() {
+                                let bts: Vec<_> = bad_tags
+                                    .into_iter()
+                                    .map(|b| b.to_string())
+                                    .map(StringValue::from)
+                                    .collect();
+                                a.push(KeyValue::new("bad_tags", Value::Array(Array::String(bts))));
+                            }
                             context.span().add_event("register_to_chris", a);
                         }
                         Err(e) => {

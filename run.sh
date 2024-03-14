@@ -39,5 +39,7 @@ exec docker run --rm $TTY --name cargo-chris-scp -u 1001:0 --group-add "$(id -g)
   -e CHRIS_USERNAME=chris \
   -e CHRIS_PASSWORD=chris1234 \
   -e PORT=11112 \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://centurion.tch.harvard.edu:4318 \
+  -e OTEL_RESOURCE_ATTRIBUTES=service.name=oxidicom-test \
   docker.io/library/rust:1.76-bookworm \
   cargo "$cmd" -- "$@"

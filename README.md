@@ -43,6 +43,8 @@ Rewriting the functionality of `pfdcm` in Rust and with a modern design has led 
 | `CHRIS_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                       |                                                      
 | `CHRIS_SCP_THREADS`           | Connection thread pool size                                                                             |
 | `PORT`                        | TCP port number to listen on                                                                            |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry Collector HTTP endpoint                                                                   |
+| `OTEL_RESOURCE_ATTRIBUTES`    | Resource attributes, e.g. `service.name=oxidicom-test`                                                  |
 
 ## Development
 
@@ -67,4 +69,47 @@ You need to have installed:
 ```shell
 just reset
 just test
+```
+
+### Observability
+
+Traces and metrics can be collected using OpenTelemetry collector.
+Most notably, there is a span for every retrieval of a DICOM series,
+and an event for every DICOM instance.
+
+#### Example Span Attributes
+
+```json
+{
+  "_timestamp": "Mar 14, 2024 07:11:34.715 -04:00",
+  "aet": "HOSPITALPACS",
+  "client_address": "127.0.0.1",
+  "client_port": "51926",
+  "duration": "70290310us",
+  "end_time": 1710414765005441300,
+  "flags": 1,
+  "operation_name": "association",
+  "service_name": "oxidicom-test",
+  "service_telemetry_sdk_language": "rust",
+  "service_telemetry_sdk_name": "opentelemetry",
+  "service_telemetry_sdk_version": "0.22.1",
+  "span_id": "59edb22075d938b2",
+  "span_kind": "Server",
+  "span_status": "OK",
+  "start_time": 1710414694715131100,
+  "trace_id": "70fca6f7b4d07cef2c55833c6ad2e965"
+}
+```
+
+#### Example Event Attributes
+
+```json
+{
+  "name": "register_to_chris",
+  "_timestamp": 1710414695118726100,
+  "url": "http://localhost:8000/api/v1/pacsfiles/2700/",
+  "SeriesInstanceUID": "1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0",
+  "success": "true",
+  "fname": "SERVICES/PACS/HOSPITALPACS/1449c1d-anonymized-20090701-003Y/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/1-1.3.12.2.1107.5.2.19.45152.2013030808110258929186035.dcm"
+}
 ```

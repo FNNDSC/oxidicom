@@ -1,5 +1,5 @@
-use dicom::core::{DataDictionary, Tag};
-use dicom::dictionary_std::StandardDataDictionary;
+use crate::error::name_of;
+use dicom::core::Tag;
 
 /// Error which might happen while receiving a DICOM series.
 #[derive(thiserror::Error, Debug)]
@@ -33,12 +33,4 @@ pub(crate) enum AssociationError {
 
     #[error("failed to build DICOM meta file information")]
     FailedToBuildMeta(dicom::object::meta::Error),
-}
-
-/// Get the standard name of a tag.
-fn name_of(tag: &Tag) -> &'static str {
-    StandardDataDictionary
-        .by_tag(*tag)
-        .map(|e| e.alias)
-        .unwrap()
 }

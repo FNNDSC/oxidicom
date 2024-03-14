@@ -1179,6 +1179,7 @@ dependencies = [
  "fs-err",
  "opentelemetry",
  "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
  "opentelemetry_sdk",
  "regex",

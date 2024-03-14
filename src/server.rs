@@ -3,6 +3,7 @@ use crate::threads::ThreadPool;
 use crate::{ChrisPacsStorage, DicomRsConfig};
 use opentelemetry::trace::{Status, TraceContextExt, Tracer};
 use opentelemetry::{global, Context, KeyValue};
+use opentelemetry_semantic_conventions as semconv;
 use std::net::{SocketAddrV4, TcpListener, TcpStream};
 use std::sync::Arc;
 
@@ -38,9 +39,11 @@ pub fn run_server(
                     let _context_guard = cx.attach();
                     let context = Context::current();
                     if let Ok(address) = scu_stream.peer_addr() {
-                        context
-                            .span()
-                            .set_attribute(KeyValue::new("address", address.to_string()));
+                        let peer_attributes = vec![
+                            KeyValue::new(semconv::trace::CLIENT_ADDRESS, address.ip().to_string()),
+                            KeyValue::new(semconv::trace::CLIENT_PORT, address.port() as i64),
+                        ];
+                        context.span().set_attributes(peer_attributes);
                     }
                     if let Err(e) = handle_incoming_dicom(scu_stream, &chris, &options) {
                         context.span().set_status(Status::error(e.to_string()))

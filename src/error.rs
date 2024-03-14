@@ -1,3 +1,6 @@
+use dicom::core::DataDictionary;
+use dicom::dictionary_std::StandardDataDictionary;
+use dicom::object::Tag;
 use reqwest::blocking::Response;
 
 #[derive(thiserror::Error, Debug)]
@@ -24,8 +27,16 @@ pub enum ChrisPacsError {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("DICOM file does not have the required tag: \"{0}\"")]
-pub struct MissingRequiredTag(pub &'static str);
+#[error("DICOM file does not have the required tag: {}", name_of(.0))]
+pub struct MissingRequiredTag(pub Tag);
+
+/// Get the standard name of a tag.
+pub(crate) fn name_of(tag: &Tag) -> &'static str {
+    StandardDataDictionary
+        .by_tag(*tag)
+        .map(|e| e.alias)
+        .unwrap_or("UNKNOWN TAG")
+}
 
 pub(crate) fn check(res: Response) -> Result<Response, ChrisPacsError> {
     match res.error_for_status_ref() {

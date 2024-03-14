@@ -9,15 +9,14 @@
 //! https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/pypx/register.py#L459-L465
 #![allow(non_snake_case)]
 
-use dicom::core::DataDictionary;
 use std::borrow::Cow;
 use std::fmt::Display;
 
 use dicom::dictionary_std::tags;
-use dicom::object::{DefaultDicomObject, StandardDataDictionary, Tag};
+use dicom::object::{DefaultDicomObject, Tag};
 use serde::{Deserialize, Serialize};
 
-use crate::error::MissingRequiredTag;
+use crate::error::{name_of, MissingRequiredTag};
 use crate::patient_age::parse_age;
 use crate::sanitize::sanitize;
 
@@ -50,8 +49,23 @@ pub struct PacsFileRegistration {
     pub SeriesDescription: Option<String>,
 }
 
+pub struct BadTag {
+    pub tag: Tag,
+    pub value: Option<String>,
+}
+
+impl Display for BadTag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}={:?}", name_of(&self.tag), self.value)
+    }
+}
+
 impl PacsFileRegistration {
-    pub fn new(pacs_name: String, dcm: &DefaultDicomObject) -> Result<Self, MissingRequiredTag> {
+    pub fn new(
+        pacs_name: String,
+        dcm: &DefaultDicomObject,
+    ) -> Result<(Self, Vec<BadTag>), MissingRequiredTag> {
+        let mut bad_tags = vec![];
         // required fields
         let StudyInstanceUID = ttr(dcm, tags::STUDY_INSTANCE_UID)?;
         let SeriesInstanceUID = ttr(dcm, tags::SERIES_INSTANCE_UID)?;
@@ -76,13 +90,10 @@ impl PacsFileRegistration {
         let PatientAge = PatientAgeStr.and_then(|age| {
             let num = parse_age(age.trim());
             if num.is_none() {
-                // warn!(
-                //     StudyInstanceUID = &StudyInstanceUID,
-                //     SeriesInstanceUID = &SeriesInstanceUID,
-                //     SOPInstanceUID = &SOPInstanceUID,
-                //     tag = "PatientAge",
-                //     invalid_value = age
-                // )
+                bad_tags.push(BadTag {
+                    tag: tags::PATIENT_AGE,
+                    value: Some(age.to_string()),
+                })
             };
             num
         });
@@ -126,13 +137,13 @@ impl PacsFileRegistration {
             StudyDescription,
             SeriesDescription,
         };
-        Ok(pacs_file)
+        Ok((pacs_file, bad_tags))
     }
 }
 
 /// Required string tag
 fn ttr(dcm: &DefaultDicomObject, tag: Tag) -> Result<String, MissingRequiredTag> {
-    tts(dcm, tag).ok_or_else(|| MissingRequiredTag(name_of(tag)))
+    tts(dcm, tag).ok_or_else(|| MissingRequiredTag(tag))
 }
 
 /// Optional string tag
@@ -146,12 +157,6 @@ fn tt(dcm: &DefaultDicomObject, tag: Tag) -> Option<&str> {
     dcm.element(tag)
         .ok()
         .and_then(|e| e.string().map(|s| s.trim()).ok())
-}
-
-/// Get the standard name of a tag.
-pub(crate) fn name_of(tag: Tag) -> &'static str {
-    // WHY SAG-anon has a DICOM tag (0019,0010)?
-    StandardDataDictionary.by_tag(tag).map(|e| e.alias).unwrap()
 }
 
 /// Something that is maybe a [u32], but in case it's not valid, is a [String].

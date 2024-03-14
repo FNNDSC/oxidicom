@@ -1,6 +1,4 @@
-//! File mostly copied from dicom-rs.
-//!
-//! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs
+//! Initialize OpenTelemetry, then call [run_server_from_env].
 
 use opentelemetry::global;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
