@@ -5,7 +5,10 @@ use dicom::dictionary_std::StandardDataDictionary;
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum AssociationError {
     #[error("Could not establish association.")]
-    CouldNotEstablish(#[from] dicom::ul::association::server::Error),
+    CouldNotEstablish(dicom::ul::association::server::Error),
+
+    #[error("Error receiving PDU.")]
+    PduReception(#[from] dicom::ul::association::server::Error),
 
     #[error("Failed to read incoming DICOM command")]
     FailedToReadCommand(dicom::object::ReadError),

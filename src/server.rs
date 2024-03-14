@@ -2,7 +2,7 @@ use crate::scp::handle_incoming_dicom;
 use crate::threads::ThreadPool;
 use crate::{ChrisPacsStorage, DicomRsConfig};
 use opentelemetry::trace::{Status, TraceContextExt, Tracer};
-use opentelemetry::{Context, global, KeyValue};
+use opentelemetry::{global, Context, KeyValue};
 use std::net::{SocketAddrV4, TcpListener, TcpStream};
 use std::sync::Arc;
 
@@ -38,7 +38,8 @@ pub fn run_server(
                     let _context_guard = cx.attach();
                     let context = Context::current();
                     if let Ok(address) = scu_stream.peer_addr() {
-                        context.span()
+                        context
+                            .span()
                             .set_attribute(KeyValue::new("address", address.to_string()));
                     }
                     if let Err(e) = handle_incoming_dicom(scu_stream, &chris, &options) {
