@@ -17,7 +17,7 @@ pub fn run_server(
     n_threads: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(address)?;
-    eprintln!("listening on: tcp://{}", address);
+    tracing::info!("listening on: tcp://{}", address);
 
     let mut pool = ThreadPool::new(n_threads);
     let chris = Arc::new(chris);
@@ -38,17 +38,27 @@ pub fn run_server(
                 pool.execute(move || {
                     let _context_guard = cx.attach();
                     let context = Context::current();
+                    let mut peer_address = None;
                     if let Ok(address) = scu_stream.peer_addr() {
                         let peer_attributes = vec![
                             KeyValue::new(semconv::trace::CLIENT_ADDRESS, address.ip().to_string()),
                             KeyValue::new(semconv::trace::CLIENT_PORT, address.port() as i64),
                         ];
                         context.span().set_attributes(peer_attributes);
+                        peer_address = Some(address);
                     }
-                    if let Err(e) = handle_incoming_dicom(scu_stream, &chris, &options) {
-                        context.span().set_status(Status::error(e.to_string()))
-                    } else {
-                        context.span().set_status(Status::Ok)
+                    match handle_incoming_dicom(scu_stream, &chris, &options) {
+                        Ok(count) => {
+                            if count == 0 {
+                                tracing::warn!("Did not receive any files from {:?}", peer_address);
+                            } else {
+                                context.span().set_status(Status::Ok)
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("{:?}", e);
+                            context.span().set_status(Status::error(e.to_string()))
+                        }
                     }
                 });
             }

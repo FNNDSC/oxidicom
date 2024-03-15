@@ -1,5 +1,6 @@
 use crate::error::name_of;
 use dicom::core::Tag;
+use dicom::ul::pdu::AbortRQSource;
 
 /// Error which might happen while receiving a DICOM series.
 #[derive(thiserror::Error, Debug)]
@@ -12,6 +13,12 @@ pub(crate) enum AssociationError {
 
     #[error("Failed to read incoming DICOM command")]
     FailedToReadCommand(dicom::object::ReadError),
+
+    #[error("Aborted connection from: {0:?}")]
+    Aborted(AbortRQSource),
+
+    #[error("Unhandled PDU: {0}")]
+    UnhandledPdu(String),
 
     #[error("{0}")]
     CannotRespond(&'static str),

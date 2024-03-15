@@ -12,8 +12,6 @@ More technically, `oxidicom` implements a DICOM C-STORE service class provider (
 a "server," which listens for incoming DICOM files. For every DICOM file received,
 it writes it to the storage of _CUBE_ and "registers" the file with _CUBE_.
 
-`oxidicom` does _not_ 
-
 ## Improvements over pfdcm
 
 Rewriting the functionality of `pfdcm` in Rust and with a modern design has led to several advantages:
@@ -42,6 +40,7 @@ Rewriting the functionality of `pfdcm` in Rust and with a modern design has led 
 | `CHRIS_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                      |
 | `CHRIS_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                       |                                                      
 | `CHRIS_SCP_THREADS`           | Connection thread pool size                                                                             |
+| `CHRIS_VERBOSE`               | Set as `yes` to show debugging messages                                                                 |
 | `PORT`                        | TCP port number to listen on                                                                            |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry Collector HTTP endpoint                                                                   |
 | `OTEL_RESOURCE_ATTRIBUTES`    | Resource attributes, e.g. `service.name=oxidicom-test`                                                  |
@@ -113,3 +112,10 @@ and an event for every DICOM instance.
   "fname": "SERVICES/PACS/HOSPITALPACS/1449c1d-anonymized-20090701-003Y/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/1-1.3.12.2.1107.5.2.19.45152.2013030808110258929186035.dcm"
 }
 ```
+
+### Usage of `opentelemetry` v.s. `tracing` in the codebase
+
+`dicom-rs` itself uses the `tracing` crate, though for the spans described above,
+I decided to use the `opentelemetry` crate. However, I am also using the `tracing`
+crate as well. Log messages created by `tracing` _do not_ get exported to the
+OpenTelemetry collector. They are primarily for debugging.

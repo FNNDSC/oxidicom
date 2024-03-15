@@ -28,12 +28,16 @@ pub struct DicomRsConfig {
     pub max_pdu_length: u32,
 }
 
+/// Handle an "association" from a "SCU" (i.e. handle when someone is trying to give us DICOM files).
+///
+/// Returns the number of DICOM files received.
 pub fn handle_incoming_dicom(
     scu_stream: TcpStream,
     chris: &ChrisPacsStorage,
     args: &DicomRsConfig,
-) -> Result<(), AssociationError> {
+) -> Result<usize, AssociationError> {
     let context = opentelemetry::Context::current();
+    let mut count = 0;
 
     let DicomRsConfig {
         calling_ae_title,
@@ -76,17 +80,17 @@ pub fn handle_incoming_dicom(
         association.client_ae_title().to_string(),
     ));
 
-    // debug!(
+    // tracing::debug!(
     //     "> Presentation contexts: {:?}",
     //     association.presentation_contexts()
     // );
 
     while let Some(mut pdu) = bubble_no_pdu(association.receive())? {
-        // debug!("scu ----> scp: {}", pdu.short_description());
+        tracing::debug!("scu ----> scp: {}", pdu.short_description());
         match pdu {
             Pdu::PData { ref mut data } => {
                 if data.is_empty() {
-                    // debug!("Ignoring empty PData PDU");
+                    tracing::debug!("Ignoring empty PData PDU");
                     continue;
                 }
 
@@ -199,6 +203,7 @@ pub fn handle_incoming_dicom(
                                 a.push(KeyValue::new("bad_tags", Value::Array(Array::String(bts))));
                             }
                             context.span().add_event("register_to_chris", a);
+                            count += 1;
                         }
                         Err(e) => {
                             let a = vec![
@@ -243,16 +248,21 @@ pub fn handle_incoming_dicom(
                         .span()
                         .add_event("failed_to_send_association_release", a);
                 });
-                // info!(
-                //     "Released association with {}",
-                //     association.client_ae_title()
-                // );
+                tracing::debug!(
+                    "Released association with {}",
+                    association.client_ae_title()
+                );
+            },
+            Pdu::AbortRQ { source } => {
+                return Err(Aborted(source));
+            },
+            _ => {
+                return Err(UnhandledPdu(pdu.short_description()))
             }
-            _ => {}
         }
     }
-    // info!("Dropping connection with {}", association.client_ae_title());
-    Ok(())
+    tracing::debug!("Dropping connection with {}", association.client_ae_title());
+    Ok(count)
 }
 
 fn create_cstore_response(

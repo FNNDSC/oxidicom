@@ -65,7 +65,7 @@ struct Worker {
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
         let thread = thread::spawn(move || {
-            eprintln!("Starting worker {id}");
+            tracing::info!("Starting worker {id}");
             loop {
                 let message = receiver.lock().unwrap().recv();
                 match message {
@@ -73,7 +73,7 @@ impl Worker {
                         job();
                     }
                     Err(_) => {
-                        eprintln!("Shutting down worker {id}");
+                        tracing::info!("Shutting down worker {id}");
                         break;
                     }
                 }
