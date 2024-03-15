@@ -45,6 +45,24 @@ Rewriting the functionality of `pfdcm` in Rust and with a modern design has led 
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry Collector HTTP endpoint                                                                   |
 | `OTEL_RESOURCE_ATTRIBUTES`    | Resource attributes, e.g. `service.name=oxidicom-test`                                                  |
 
+## Failure Modes
+
+- An error with an individual instance does not terminate the association
+  (meaning, subsequent instances will still have the chance to be received).
+- Currently, the following tags are required:
+  StudyInstanceUID, SeriesInstanceUID, SOPInstanceUID, PatientID, and StudyDate.
+  If any of the tags are missing, the DICOM instance will not be stored.
+- Files are first written to storage, then registered to CUBE. If CUBE does not
+  accept the file registration, the file will still remain in storage.
+- Registering the file to _CUBE_ is synchronous with file reception from the SCU.
+  If _CUBE_'s response is slow, the SCU might time out the connection and disconnect,
+  so all subsequent instances will be lost. Async functionality is blocked, see
+  https://github.com/Enet4/dicom-rs/issues/476
+- If an unknown SOP class UID is encountered, the SCU will (probably) choose to abort
+  the association. In this case, `oxidicom` will be aware that the abortion and the
+  OpenTelemetry span for this association will have `status=error`. This can maybe
+  be resolved, see https://github.com/Enet4/dicom-rs/issues/477
+
 ## Development
 
 The development scripts are hard-coded to work with an instance of _miniChRIS_.
