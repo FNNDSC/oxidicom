@@ -40,4 +40,4 @@ push-one:
     storescu localhost 11112 example_data/FNNDSC-SAG-anon-3d6e850/0188-1.3.12.2.1107.5.2.19.45152.2013030808105567563785463.dcm -aet HOSPITALPACS -aec ChRIS --verbose
 
 push-us:
-    storescu localhost 11112 example_data/ultrasound/0020.DCM -aet HOSPITALPACS -aec ChRIS --verbose
+    storescu localhost 11112 example_data/ultrasound/0020.DCM -aet HOSPITALPACS -aec ChRIS --debug

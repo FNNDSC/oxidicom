@@ -1,27 +1,29 @@
 use crate::scp::handle_incoming_dicom;
 use crate::threads::ThreadPool;
-use crate::{ChrisPacsStorage, DicomRsConfig};
+use crate::ChrisPacsStorage;
 use opentelemetry::trace::{Status, TraceContextExt, Tracer};
 use opentelemetry::{global, Context, KeyValue};
 use opentelemetry_semantic_conventions as semconv;
 use std::net::{SocketAddrV4, TcpListener, TcpStream};
 use std::sync::Arc;
+use crate::dicomrs_options::DicomRsConfig;
 
 /// `finite_connections` is a variable only used for testing. It tells the server to exit
 /// after a finite number of connections, or on the first error.
 pub fn run_server(
     address: &SocketAddrV4,
     chris: ChrisPacsStorage,
-    options: DicomRsConfig,
+    config: DicomRsConfig,
     finite_connections: Option<usize>,
     n_threads: usize,
+    max_pdu_length: usize
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(address)?;
     tracing::info!("listening on: tcp://{}", address);
 
     let mut pool = ThreadPool::new(n_threads);
     let chris = Arc::new(chris);
-    let options = Arc::new(options);
+    let options = Arc::new(config.into());
 
     let incoming: Box<dyn Iterator<Item = Result<TcpStream, _>>> =
         if let Some(n) = finite_connections {
@@ -47,7 +49,7 @@ pub fn run_server(
                         context.span().set_attributes(peer_attributes);
                         peer_address = Some(address);
                     }
-                    match handle_incoming_dicom(scu_stream, &chris, &options) {
+                    match handle_incoming_dicom(scu_stream, &chris, &options, max_pdu_length) {
                         Ok(count) => {
                             if count == 0 {
                                 tracing::warn!("Did not receive any files from {:?}", peer_address);

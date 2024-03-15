@@ -9,9 +9,10 @@ mod scp;
 mod server;
 mod threads;
 mod transfer;
+mod dicomrs_options;
 
 pub use chris::ChrisPacsStorage;
 pub use error::ChrisPacsError;
 pub use run_from_env::run_server_from_env;
-pub use scp::DicomRsConfig;
+pub use dicomrs_options::DicomRsConfig;
 pub use server::run_server;

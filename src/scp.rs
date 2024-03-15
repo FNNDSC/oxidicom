@@ -11,22 +11,15 @@ use dicom::dictionary_std::{tags, StandardDataDictionary};
 use dicom::encoding::TransferSyntaxIndex;
 use dicom::object::{FileMetaTableBuilder, InMemDicomObject};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
+use dicom::ul::association::server::AcceptAny;
 use dicom::ul::pdu::PDataValueType;
-use dicom::ul::Pdu;
+use dicom::ul::{Pdu, ServerAssociationOptions};
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry::{Array, KeyValue, StringValue, Value};
 
 use crate::association_error::{AssociationError, AssociationError::*};
-use crate::transfer::ABSTRACT_SYNTAXES;
 use crate::ChrisPacsStorage;
 
-pub struct DicomRsConfig {
-    pub calling_ae_title: String,
-    /// Whether receiving PDUs must not surpass the negotiated maximum PDU length.
-    pub strict: bool,
-    pub uncompressed_only: bool,
-    pub max_pdu_length: u32,
-}
 
 /// Handle an "association" from a "SCU" (i.e. handle when someone is trying to give us DICOM files).
 ///
@@ -34,56 +27,26 @@ pub struct DicomRsConfig {
 pub fn handle_incoming_dicom(
     scu_stream: TcpStream,
     chris: &ChrisPacsStorage,
-    args: &DicomRsConfig,
+    options: &ServerAssociationOptions<AcceptAny>,
+    max_pdu_length: usize
 ) -> Result<usize, AssociationError> {
     let context = opentelemetry::Context::current();
     let mut count = 0;
-
-    let DicomRsConfig {
-        calling_ae_title,
-        strict,
-        uncompressed_only,
-        max_pdu_length,
-    } = args;
-
-    let mut buffer: Vec<u8> = Vec::with_capacity(*max_pdu_length as usize);
-    let mut instance_buffer: Vec<u8> = Vec::with_capacity(1024 * 1024);
-    let mut msgid = 1;
-    let mut sop_class_uid = "".to_string();
-    let mut sop_instance_uid = "".to_string();
-
-    let mut options = dicom::ul::association::ServerAssociationOptions::new()
-        .accept_any()
-        .ae_title(calling_ae_title)
-        .strict(*strict);
-
-    if *uncompressed_only {
-        options = options
-            .with_transfer_syntax("1.2.840.10008.1.2")
-            .with_transfer_syntax("1.2.840.10008.1.2.1");
-    } else {
-        for ts in TransferSyntaxRegistry.iter() {
-            if !ts.is_unsupported() {
-                options = options.with_transfer_syntax(ts.uid());
-            }
-        }
-    };
-
-    for uid in ABSTRACT_SYNTAXES {
-        options = options.with_abstract_syntax(*uid);
-    }
-
     let mut association = options.establish(scu_stream).map_err(CouldNotEstablish)?;
-
     context.span().set_attribute(KeyValue::new(
         "aet",
         association.client_ae_title().to_string(),
     ));
-
     // tracing::debug!(
     //     "> Presentation contexts: {:?}",
     //     association.presentation_contexts()
     // );
+
+    let mut buffer: Vec<u8> = Vec::with_capacity(max_pdu_length);
+    let mut instance_buffer: Vec<u8> = Vec::with_capacity(1024 * 1024);
+    let mut msgid = 1;
+    let mut sop_class_uid = "".to_string();
+    let mut sop_instance_uid = "".to_string();
 
     while let Some(mut pdu) = bubble_no_pdu(association.receive())? {
         tracing::debug!("scu ----> scp: {}", pdu.short_description());

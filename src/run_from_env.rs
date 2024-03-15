@@ -23,11 +23,11 @@ pub fn run_server_from_env(
         calling_ae_title: envmnt::get_or("CHRIS_SCP_AET", "ChRIS"),
         strict: envmnt::is_or("CHRIS_SCP_STRICT", false),
         uncompressed_only: envmnt::is_or("CHRIS_SCP_UNCOMPRESSED_ONLY", false),
-        max_pdu_length: envmnt::get_u32("CHRIS_SCP_MAX_PDU_LENGTH", 16384),
     };
 
     let n_threads = n_threads.unwrap_or_else(|| envmnt::get_usize("CHRIS_SCP_THREADS", 16));
-    run_server(&address, chris, options, finite_connections, n_threads)
+    let max_pdu_length = envmnt::get_usize("CHRIS_SCP_MAX_PDU_LENGTH", 16384);
+    run_server(&address, chris, options, finite_connections, n_threads, max_pdu_length)
 }
 
 fn env_option(name: &'static str) -> Option<String> {
