@@ -1,9 +1,12 @@
 //! Accepted storage transfer options.
 
 use dicom::dictionary_std::uids::*;
+use crate::private_sop_uids::*;
+
 
 /// A list of supported abstract syntaxes for storage services
 pub static ABSTRACT_SYNTAXES: &[&str] = &[
+    // standard SOP classes from dicom-rs
     ACQUISITION_CONTEXT_SR_STORAGE,
     ADVANCED_BLENDING_PRESENTATION_STATE_STORAGE,
     AMBULATORY_ECG_WAVEFORM_STORAGE,
@@ -184,5 +187,10 @@ pub static ABSTRACT_SYNTAXES: &[&str] = &[
     X_RAY_ANGIOGRAPHIC_IMAGE_STORAGE,
     X_RAY_RADIATION_DOSE_SR_STORAGE,
     X_RAY_RADIOFLUOROSCOPIC_IMAGE_STORAGE,
-    VERIFICATION
+    VERIFICATION,
+
+    // private SOP classes
+    SIEMENS_AX_FRAME_SETS_STORAGE,
+    SIEMENS_CSA_NON_IMAGE_STORAGE,
+    SIEMENS_CT_MR_VOLUME_STORAGE
 ];

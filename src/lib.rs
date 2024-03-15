@@ -10,6 +10,7 @@ mod server;
 mod threads;
 mod transfer;
 mod dicomrs_options;
+mod private_sop_uids;
 
 pub use chris::ChrisPacsStorage;
 pub use error::ChrisPacsError;
