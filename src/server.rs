@@ -1,3 +1,4 @@
+use crate::dicomrs_options::DicomRsConfig;
 use crate::scp::handle_incoming_dicom;
 use crate::threads::ThreadPool;
 use crate::ChrisPacsStorage;
@@ -6,7 +7,6 @@ use opentelemetry::{global, Context, KeyValue};
 use opentelemetry_semantic_conventions as semconv;
 use std::net::{SocketAddrV4, TcpListener, TcpStream};
 use std::sync::Arc;
-use crate::dicomrs_options::DicomRsConfig;
 
 /// `finite_connections` is a variable only used for testing. It tells the server to exit
 /// after a finite number of connections, or on the first error.
@@ -16,7 +16,7 @@ pub fn run_server(
     config: DicomRsConfig,
     finite_connections: Option<usize>,
     n_threads: usize,
-    max_pdu_length: usize
+    max_pdu_length: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(address)?;
     tracing::info!("listening on: tcp://{}", address);

@@ -1,8 +1,8 @@
+use crate::transfer::ABSTRACT_SYNTAXES;
 use dicom::dictionary_std::uids;
 use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom::ul::association::server::AcceptAny;
 use dicom::ul::ServerAssociationOptions;
-use crate::transfer::ABSTRACT_SYNTAXES;
 
 pub struct DicomRsConfig {
     pub calling_ae_title: String,
@@ -30,7 +30,7 @@ impl<'a> Into<ServerAssociationOptions<'a, AcceptAny>> for DicomRsConfig {
         };
         for uid in ABSTRACT_SYNTAXES {
             options = options.with_abstract_syntax(*uid);
-        };
+        }
         options
     }
 }

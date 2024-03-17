@@ -1,7 +1,9 @@
 use camino::Utf8PathBuf;
 use dicom::object::DefaultDicomObject;
+use reqwest::StatusCode;
+use std::time::Duration;
 
-use crate::error::{check, ChrisPacsError};
+use crate::error::{check, ChrisPacsError, RequestError};
 use crate::pacs_file::{BadTag, PacsFileRegistration, PacsFileResponse};
 
 pub struct ChrisPacsStorage {
@@ -56,7 +58,36 @@ impl ChrisPacsStorage {
         &self,
         file: &PacsFileRegistration,
     ) -> Result<PacsFileResponse, ChrisPacsError> {
-        // TODO implement debounce, retries, sleep
+        let mut last_error = None;
+        let max_retries = self.retries + 1;
+        for attempt in 1..max_retries {
+            match self.send_register_request(file) {
+                Ok(data) => return Ok(data),
+                Err(e) => {
+                    if should_retry(&e) {
+                        if attempt != self.retries {
+                            let duration = backoff(attempt);
+                            tracing::warn!(
+                                "Error from CUBE: {:?}. Going to retry after {}s",
+                                &e,
+                                duration.as_secs()
+                            );
+                            std::thread::sleep(duration);
+                        }
+                        last_error = Some(e);
+                    } else {
+                        return Err(e.into());
+                    }
+                }
+            }
+        }
+        Err(last_error.unwrap().into())
+    }
+
+    fn send_register_request(
+        &self,
+        file: &PacsFileRegistration,
+    ) -> Result<PacsFileResponse, RequestError> {
         let res = self
             .client
             .post(&self.url)
@@ -65,6 +96,30 @@ impl ChrisPacsStorage {
             .json(file)
             .send()?;
         let data = check(res)?.json()?;
-        Ok(data)
+        return Ok(data);
     }
+}
+
+fn should_retry(e: &RequestError) -> bool {
+    e.status()
+        .as_ref()
+        .map(|status| RETRYABLE_STATUS.iter().find(|s| s == &status).is_some())
+        .unwrap_or(false)
+}
+
+const RETRYABLE_STATUS: [StatusCode; 8] = [
+    StatusCode::INTERNAL_SERVER_ERROR,
+    StatusCode::BAD_GATEWAY,
+    StatusCode::SERVICE_UNAVAILABLE,
+    StatusCode::GATEWAY_TIMEOUT,
+    StatusCode::INSUFFICIENT_STORAGE,
+    StatusCode::REQUEST_TIMEOUT,
+    StatusCode::CONFLICT,
+    StatusCode::TOO_MANY_REQUESTS,
+];
+
+/// Produce duration to sleep for (will never exceed 20 seconds).
+fn backoff(attempt: u16) -> Duration {
+    let seconds = std::cmp::min(2u64.pow(attempt as u32), 20);
+    Duration::from_secs(seconds)
 }

@@ -27,7 +27,14 @@ pub fn run_server_from_env(
 
     let n_threads = n_threads.unwrap_or_else(|| envmnt::get_usize("CHRIS_SCP_THREADS", 16));
     let max_pdu_length = envmnt::get_usize("CHRIS_SCP_MAX_PDU_LENGTH", 16384);
-    run_server(&address, chris, options, finite_connections, n_threads, max_pdu_length)
+    run_server(
+        &address,
+        chris,
+        options,
+        finite_connections,
+        n_threads,
+        max_pdu_length,
+    )
 }
 
 fn env_option(name: &'static str) -> Option<String> {

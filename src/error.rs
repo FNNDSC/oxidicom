@@ -2,6 +2,7 @@ use dicom::core::DataDictionary;
 use dicom::dictionary_std::StandardDataDictionary;
 use dicom::object::Tag;
 use reqwest::blocking::Response;
+use reqwest::StatusCode;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ChrisPacsError {
@@ -14,16 +15,20 @@ pub enum ChrisPacsError {
     #[error(transparent)]
     MissingTag(#[from] MissingRequiredTag),
 
-    #[error("({status:?} {reason:?}): {text:?}")]
-    Cube {
-        status: reqwest::StatusCode,
-        reason: &'static str,
-        text: Result<String, reqwest::Error>,
-        source: reqwest::Error,
-    },
+    #[error(transparent)]
+    Cube(#[from] CubeError),
 
     #[error(transparent)]
     Request(#[from] reqwest::Error),
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("({status:?} {reason:?}): {text:?}")]
+pub struct CubeError {
+    pub status: reqwest::StatusCode,
+    pub reason: &'static str,
+    pub text: Result<String, reqwest::Error>,
+    pub source: reqwest::Error,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -38,19 +43,44 @@ pub(crate) fn name_of(tag: &Tag) -> &'static str {
         .unwrap_or("UNKNOWN TAG")
 }
 
-pub(crate) fn check(res: Response) -> Result<Response, ChrisPacsError> {
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum RequestError {
+    #[error(transparent)]
+    Cube(#[from] CubeError),
+
+    #[error(transparent)]
+    Base(#[from] reqwest::Error),
+}
+
+impl RequestError {
+    pub fn status(&self) -> Option<StatusCode> {
+        match self {
+            Self::Cube(e) => Some(e.status),
+            Self::Base(e) => e.status(),
+        }
+    }
+}
+
+impl From<RequestError> for ChrisPacsError {
+    fn from(value: RequestError) -> Self {
+        match value {
+            RequestError::Cube(e) => Self::Cube(e),
+            RequestError::Base(e) => Self::Request(e),
+        }
+    }
+}
+
+pub(crate) fn check(res: Response) -> Result<Response, RequestError> {
     match res.error_for_status_ref() {
         Ok(_) => Ok(res),
         Err(source) => {
-            let status = res.status();
-            let reason = status.canonical_reason().unwrap_or("unknown reason");
-            let text = res.text();
-            Err(ChrisPacsError::Cube {
-                status,
-                reason,
-                text,
+            let error = CubeError {
+                status: res.status(),
+                reason: res.status().canonical_reason().unwrap_or("unknown reason"),
+                text: res.text(),
                 source,
-            })
+            };
+            Err(RequestError::Cube(error))
         }
     }
 }

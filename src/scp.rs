@@ -20,7 +20,6 @@ use opentelemetry::{Array, KeyValue, StringValue, Value};
 use crate::association_error::{AssociationError, AssociationError::*};
 use crate::ChrisPacsStorage;
 
-
 /// Handle an "association" from a "SCU" (i.e. handle when someone is trying to give us DICOM files).
 ///
 /// Returns the number of DICOM files received.
@@ -28,7 +27,7 @@ pub fn handle_incoming_dicom(
     scu_stream: TcpStream,
     chris: &ChrisPacsStorage,
     options: &ServerAssociationOptions<AcceptAny>,
-    max_pdu_length: usize
+    max_pdu_length: usize,
 ) -> Result<usize, AssociationError> {
     let context = opentelemetry::Context::current();
     let mut count = 0;
@@ -152,7 +151,11 @@ pub fn handle_incoming_dicom(
                     match result {
                         Ok((pacs_file, bad_tags)) => {
                             count += 1;
-                            tracing::info!(event = "register_to_chris", success = true, fname = &pacs_file.fname);
+                            tracing::info!(
+                                event = "register_to_chris",
+                                success = true,
+                                fname = &pacs_file.fname
+                            );
                             let mut a = vec![
                                 KeyValue::new("success", true),
                                 KeyValue::new("SeriesInstanceUID", pacs_file.SeriesInstanceUID),
@@ -170,7 +173,11 @@ pub fn handle_incoming_dicom(
                             context.span().add_event("register_to_chris", a);
                         }
                         Err(e) => {
-                            tracing::info!(event = "register_to_chris", success = false, error = e.to_string());
+                            tracing::info!(
+                                event = "register_to_chris",
+                                success = false,
+                                error = e.to_string()
+                            );
                             let a = vec![
                                 KeyValue::new("success", false),
                                 KeyValue::new("error", e.to_string()),
@@ -217,13 +224,11 @@ pub fn handle_incoming_dicom(
                     "Released association with {}",
                     association.client_ae_title()
                 );
-            },
+            }
             Pdu::AbortRQ { source } => {
                 return Err(Aborted(source));
-            },
-            _ => {
-                return Err(UnhandledPdu(pdu.short_description()))
             }
+            _ => return Err(UnhandledPdu(pdu.short_description())),
         }
     }
     tracing::debug!("Dropping connection with {}", association.client_ae_title());
