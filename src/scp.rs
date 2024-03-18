@@ -3,7 +3,8 @@
 //! File mostly copied from dicom-rs.
 //! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs
 
-use std::net::TcpStream;
+use std::net::{SocketAddrV4, TcpStream};
+use std::sync::mpsc::Sender;
 
 use dicom::core::{DataElement, VR};
 use dicom::dicom_value;
@@ -15,27 +16,42 @@ use dicom::ul::association::server::AcceptAny;
 use dicom::ul::pdu::PDataValueType;
 use dicom::ul::{Pdu, ServerAssociationOptions};
 use opentelemetry::trace::TraceContextExt;
-use opentelemetry::{Array, KeyValue, StringValue, Value};
+use opentelemetry::KeyValue;
+use uuid::Uuid;
 
 use crate::association_error::{AssociationError, AssociationError::*};
-use crate::ChrisPacsStorage;
+use crate::dicomrs_options::{ClientAETitle, OurAETitle};
+use crate::event::AssociationEvent;
 
-/// Handle an "association" from a "SCU" (i.e. handle when someone is trying to give us DICOM files).
+/// Handle an "association" from an "SCU" (i.e. handle when someone is trying to give us DICOM files).
 ///
-/// Returns the number of DICOM files received.
-pub fn handle_incoming_dicom(
+/// The `uuid` parameter should be a unique UUID for this SCU stream instance.
+/// When the association is first established, a [AssociationEvent::Start] event will be sent through `channel`.
+/// For each received DICOM file, it will be sent through the `channel` as [AssociationEvent::DicomInstance].
+pub fn handle_association(
     scu_stream: TcpStream,
-    chris: &ChrisPacsStorage,
     options: &ServerAssociationOptions<AcceptAny>,
     max_pdu_length: usize,
-) -> Result<usize, AssociationError> {
-    let context = opentelemetry::Context::current();
-    let mut count = 0;
+    channel: &Sender<AssociationEvent>,
+    uuid: Uuid,
+    aet: &OurAETitle,
+    pacs_address: Option<SocketAddrV4>,
+) -> Result<(), AssociationError> {
     let mut association = options.establish(scu_stream).map_err(CouldNotEstablish)?;
-    context.span().set_attribute(KeyValue::new(
-        "aet",
-        association.client_ae_title().to_string(),
-    ));
+    let context = opentelemetry::Context::current();
+    let aec = association.client_ae_title();
+    context
+        .span()
+        .set_attribute(KeyValue::new("aet", aec.to_string()));
+    channel
+        .send(AssociationEvent::Start {
+            uuid,
+            aet: aet.clone(),
+            aec: ClientAETitle::from(aec),
+            pacs_address,
+        })
+        .unwrap();
+
     // tracing::debug!(
     //     "> Presentation contexts: {:?}",
     //     association.presentation_contexts()
@@ -144,47 +160,15 @@ pub fn handle_incoming_dicom(
                         .build()
                         .map_err(FailedToBuildMeta)?;
 
-                    // CALL TO chris BEGINS HERE
+                    // CALL TO ChRIS-RELATED CODE
                     // --------------------------------------------------------------------------------
                     let file_obj = obj.with_exact_meta(file_meta);
-                    let result = chris.store(association.client_ae_title(), file_obj);
-                    match result {
-                        Ok((pacs_file, bad_tags)) => {
-                            count += 1;
-                            tracing::info!(
-                                event = "register_to_chris",
-                                success = true,
-                                fname = &pacs_file.fname
-                            );
-                            let mut a = vec![
-                                KeyValue::new("success", true),
-                                KeyValue::new("SeriesInstanceUID", pacs_file.SeriesInstanceUID),
-                                KeyValue::new("fname", pacs_file.fname),
-                                KeyValue::new("url", pacs_file.url),
-                            ];
-                            if !bad_tags.is_empty() {
-                                let bts: Vec<_> = bad_tags
-                                    .into_iter()
-                                    .map(|b| b.to_string())
-                                    .map(StringValue::from)
-                                    .collect();
-                                a.push(KeyValue::new("bad_tags", Value::Array(Array::String(bts))));
-                            }
-                            context.span().add_event("register_to_chris", a);
-                        }
-                        Err(e) => {
-                            tracing::info!(
-                                event = "register_to_chris",
-                                success = false,
-                                error = e.to_string()
-                            );
-                            let a = vec![
-                                KeyValue::new("success", false),
-                                KeyValue::new("error", e.to_string()),
-                            ];
-                            context.span().add_event("register_to_chris", a);
-                        }
-                    }
+                    channel
+                        .send(AssociationEvent::DicomInstance {
+                            uuid,
+                            dcm: file_obj,
+                        })
+                        .unwrap();
                     // END OF ChRIS-RELATED CODE
                     // --------------------------------------------------------------------------------
 
@@ -220,7 +204,7 @@ pub fn handle_incoming_dicom(
                         .span()
                         .add_event("failed_to_send_association_release", a);
                 });
-                tracing::debug!(
+                tracing::info!(
                     "Released association with {}",
                     association.client_ae_title()
                 );
@@ -231,8 +215,8 @@ pub fn handle_incoming_dicom(
             _ => return Err(UnhandledPdu(pdu.short_description())),
         }
     }
-    tracing::debug!("Dropping connection with {}", association.client_ae_title());
-    Ok(count)
+    tracing::info!("Dropping connection with {}", association.client_ae_title());
+    Ok(())
 }
 
 fn create_cstore_response(

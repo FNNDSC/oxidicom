@@ -25,7 +25,7 @@ pub enum ChrisPacsError {
 #[derive(thiserror::Error, Debug)]
 #[error("({status:?} {reason:?}): {text:?}")]
 pub struct CubeError {
-    pub status: reqwest::StatusCode,
+    pub status: StatusCode,
     pub reason: &'static str,
     pub text: Result<String, reqwest::Error>,
     pub source: reqwest::Error,

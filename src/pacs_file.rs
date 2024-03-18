@@ -12,6 +12,7 @@
 use std::borrow::Cow;
 use std::fmt::Display;
 
+use crate::dicomrs_options::ClientAETitle;
 use dicom::dictionary_std::tags;
 use dicom::object::{DefaultDicomObject, Tag};
 use serde::{Deserialize, Serialize};
@@ -20,14 +21,15 @@ use crate::error::{name_of, MissingRequiredTag};
 use crate::patient_age::parse_age;
 use crate::sanitize::sanitize;
 
+/// POST request body to CUBE `api/v1/pacsfiles/`
 #[derive(Serialize)]
-pub struct PacsFileRegistration {
+pub struct PacsFileRegistrationRequest {
     pub path: String,
     pub PatientID: String,
     pub StudyDate: String,
     pub StudyInstanceUID: String,
     pub SeriesInstanceUID: String,
-    pub pacs_name: String,
+    pub pacs_name: ClientAETitle,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub PatientName: Option<String>,
@@ -60,9 +62,9 @@ impl Display for BadTag {
     }
 }
 
-impl PacsFileRegistration {
+impl PacsFileRegistrationRequest {
     pub fn new(
-        pacs_name: String,
+        pacs_name: ClientAETitle,
         dcm: &DefaultDicomObject,
     ) -> Result<(Self, Vec<BadTag>), MissingRequiredTag> {
         let mut bad_tags = vec![];

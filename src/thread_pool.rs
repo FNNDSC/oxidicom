@@ -14,7 +14,7 @@ pub struct ThreadPool {
 
 impl ThreadPool {
     /// Create a thread pool
-    pub fn new(size: usize) -> ThreadPool {
+    pub fn new(size: usize, name: &'static str) -> ThreadPool {
         if size == 0 {
             panic!("Thread pool cannot have 0 threads.")
         }
@@ -22,7 +22,7 @@ impl ThreadPool {
         let (sender, receiver) = mpsc::channel();
         let receiver = Arc::new(Mutex::new(receiver));
         let workers = (0..size)
-            .map(|id| Worker::new(id, Arc::clone(&receiver)))
+            .map(|id| Worker::new(id, Arc::clone(&receiver), name))
             .collect();
 
         ThreadPool {
@@ -63,9 +63,13 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+    fn new(
+        id: usize,
+        receiver: Arc<Mutex<mpsc::Receiver<Job>>>,
+        pool_name: &'static str,
+    ) -> Worker {
         let thread = thread::spawn(move || {
-            tracing::info!("Starting worker {id}");
+            tracing::info!("Starting worker {pool_name}/{id}");
             loop {
                 let message = receiver.lock().unwrap().recv();
                 match message {
@@ -73,7 +77,7 @@ impl Worker {
                         job();
                     }
                     Err(_) => {
-                        tracing::info!("Shutting down worker {id}");
+                        tracing::info!("Shutting down worker {pool_name}/{id}");
                         break;
                     }
                 }

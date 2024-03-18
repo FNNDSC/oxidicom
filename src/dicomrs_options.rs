@@ -1,11 +1,20 @@
 use crate::transfer::ABSTRACT_SYNTAXES;
+use aliri_braid::braid;
 use dicom::dictionary_std::uids;
 use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom::ul::association::server::AcceptAny;
 use dicom::ul::ServerAssociationOptions;
 
+/// Our AE title.
+#[braid]
+pub struct OurAETitle;
+
+/// The AE title of a peer PACS server pushing DICOMs to us.
+#[braid(serde)]
+pub struct ClientAETitle;
+
 pub struct DicomRsConfig {
-    pub calling_ae_title: String,
+    pub aet: OurAETitle,
     /// Whether receiving PDUs must not surpass the negotiated maximum PDU length.
     pub strict: bool,
     pub uncompressed_only: bool,
@@ -15,7 +24,7 @@ impl<'a> Into<ServerAssociationOptions<'a, AcceptAny>> for DicomRsConfig {
     fn into(self) -> ServerAssociationOptions<'a, AcceptAny> {
         let mut options = dicom::ul::association::ServerAssociationOptions::new()
             .accept_any()
-            .ae_title(self.calling_ae_title)
+            .ae_title(self.aet.to_string())
             .strict(self.strict);
         if self.uncompressed_only {
             options = options

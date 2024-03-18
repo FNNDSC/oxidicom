@@ -1,0 +1,96 @@
+# You *must* use `just` to run docker compose commands.
+# Running docker compose commands directly is not recommended.
+
+services:
+  orthanc:
+    image: docker.io/jodogne/orthanc-plugins:1.12.3
+    volumes:
+      - ./orthanc.json:/etc/orthanc/orthanc.json:ro
+      - orthanc:/var/lib/orthanc/db
+    ports:
+      - "4242:4242"
+      - "8042:8042"
+    networks:
+      test-oxidicom:
+  oxidicom:
+    image: docker.io/library/rust:1.76-bookworm
+    user: 1001:0
+    group_add:
+      - ${GID-0}
+    volumes: &RUST_VOLUMES
+      - cargo-home:/cargo
+      - cargo-target:/target
+      - ./:/src:ro
+      - minichris-files:/data:rw
+    working_dir: /src
+    environment:
+      CHRIS_FILES_ROOT: /data
+      CHRIS_URL: http://chris:8000/api/v1/
+      CHRIS_USERNAME: chris
+      CHRIS_PASSWORD: chris1234
+      CHRIS_SCP_AET: OXIDICOMTEST
+      PORT: 11112
+      CHRIS_LISTENER_THREADS: 8
+      CHRIS_PUSHER_THREADS: ${CHRIS_PUSHER_THREADS:-4}
+      CHRIS_VERBOSE: "yes"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+      OTEL_RESOURCE_ATTRIBUTES: service.name=oxidicom-test
+      CARGO_TARGET_DIR: /target
+      CARGO_HOME: /cargo
+    depends_on:
+      - rust-target-dir-permissions
+      - orthanc
+    profiles:
+      - oxidicom
+    networks:
+      minichris-local:
+      test-oxidicom:
+  rust-target-dir-permissions:
+    image: docker.io/library/rust:1.76-bookworm
+    volumes: *RUST_VOLUMES
+    command: chmod g+rwx /target /cargo
+    profiles:
+      - oxidicom
+    networks:
+      test-oxidicom:
+
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:v0.9.1
+    environment:
+      ZO_ROOT_USER_EMAIL: dev@babymri.org
+      ZO_ROOT_USER_PASSWORD: chris1234
+      ZO_DATA_DIR: /data
+    ports:
+      - "5080:5080"
+    volumes:
+      - openobserve:/data
+    restart: unless-stopped
+    profiles:
+      - observe
+    networks:
+      test-oxidicom:
+  otel-collector:
+    image: docker.io/otel/opentelemetry-collector:0.96.0
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    profiles:
+      - observe
+    networks:
+      test-oxidicom:
+
+volumes:
+  orthanc:
+  openobserve:
+  cargo-target:
+  cargo-home:
+  minichris-files:
+    external: true
+    name: minichris-files
+
+networks:
+  test-oxidicom:
+  minichris-local:
+    external: true
+    name: minichris-local

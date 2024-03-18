@@ -1,29 +1,28 @@
+use crate::dicomrs_options::ClientAETitle;
 use camino::Utf8PathBuf;
 use dicom::object::DefaultDicomObject;
 use reqwest::StatusCode;
 use std::time::Duration;
 
-use crate::error::{check, ChrisPacsError, RequestError};
-use crate::pacs_file::{BadTag, PacsFileRegistration, PacsFileResponse};
+use crate::error::{check, ChrisPacsError, MissingRequiredTag, RequestError};
+use crate::pacs_file::{BadTag, PacsFileRegistrationRequest, PacsFileResponse};
 
-pub struct ChrisPacsStorage {
+pub struct CubePacsStorageClient {
     client: reqwest::blocking::Client,
     retries: u16,
     url: String,
     username: String,
     password: String,
     dir: Utf8PathBuf,
-    pacs_name: Option<String>,
 }
 
-impl ChrisPacsStorage {
-    pub fn new(
+impl CubePacsStorageClient {
+    pub(crate) fn new(
         url: String,
         username: String,
         password: String,
         dir: Utf8PathBuf,
         retries: u16,
-        pacs_name: Option<String>,
     ) -> Self {
         Self {
             url,
@@ -35,28 +34,24 @@ impl ChrisPacsStorage {
             password,
             dir,
             retries,
-            pacs_name,
         }
     }
 
-    pub fn store(
+    pub(crate) fn store(
         &self,
-        pacs_name: &str,
-        obj: DefaultDicomObject,
-    ) -> Result<(PacsFileResponse, Vec<BadTag>), ChrisPacsError> {
-        let pacs_name = self.pacs_name.as_deref().unwrap_or(pacs_name);
-        let (pacs_file, bad_tags) = PacsFileRegistration::new(pacs_name.to_string(), &obj)?;
-        let dst = self.dir.join(&pacs_file.path);
+        pacs_file: &PacsFileRegistration,
+    ) -> Result<PacsFileResponse, ChrisPacsError> {
+        let dst = self.dir.join(&pacs_file.request.path);
         if let Some(parent) = dst.parent() {
             fs_err::create_dir_all(parent)?;
         }
-        obj.write_to_file(dst)?;
-        self.register_file(&pacs_file).map(|res| (res, bad_tags))
+        pacs_file.obj.write_to_file(dst)?;
+        self.register_file(&pacs_file.request)
     }
 
     fn register_file(
         &self,
-        file: &PacsFileRegistration,
+        file: &PacsFileRegistrationRequest,
     ) -> Result<PacsFileResponse, ChrisPacsError> {
         let mut last_error = None;
         let max_retries = self.retries + 1;
@@ -86,7 +81,7 @@ impl ChrisPacsStorage {
 
     fn send_register_request(
         &self,
-        file: &PacsFileRegistration,
+        file: &PacsFileRegistrationRequest,
     ) -> Result<PacsFileResponse, RequestError> {
         let res = self
             .client
@@ -97,6 +92,26 @@ impl ChrisPacsStorage {
             .send()?;
         let data = check(res)?.json()?;
         return Ok(data);
+    }
+}
+
+/// A wrapper of [PacsFileRegistrationRequest] along with the [DefaultDicomObject] it was created from.
+pub(crate) struct PacsFileRegistration {
+    pub(crate) request: PacsFileRegistrationRequest,
+    pub(crate) obj: DefaultDicomObject,
+}
+
+impl PacsFileRegistration {
+    /// Wraps [PacsFileRegistrationRequest::new], returning the same result but with ownership of
+    /// the given [DefaultDicomObject].
+    pub(crate) fn new(
+        pacs_name: ClientAETitle,
+        obj: DefaultDicomObject,
+    ) -> Result<(Self, Vec<BadTag>), MissingRequiredTag> {
+        PacsFileRegistrationRequest::new(pacs_name, &obj).map(|(request, bad_tags)| {
+            let pacs_file = Self { request, obj };
+            (pacs_file, bad_tags)
+        })
     }
 }
 
