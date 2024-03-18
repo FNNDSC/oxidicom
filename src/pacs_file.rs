@@ -154,7 +154,7 @@ fn tts(dcm: &DefaultDicomObject, tag: Tag) -> Option<String> {
 
 /// Try to get the trimmed string value of a DICOM object.
 /// (This function is marginally more efficient than [tts].)
-fn tt(dcm: &DefaultDicomObject, tag: Tag) -> Option<&str> {
+pub(crate) fn tt(dcm: &DefaultDicomObject, tag: Tag) -> Option<&str> {
     dcm.element(tag)
         .ok()
         .and_then(|e| e.string().map(|s| s.trim()).ok())

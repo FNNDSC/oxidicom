@@ -3,7 +3,7 @@ use crate::custom_metadata::SeriesKeySet;
 use crate::dicomrs_options::{ClientAETitle, OurAETitle};
 use crate::error::ChrisPacsError;
 use crate::event::AssociationEvent;
-use crate::pacs_file::{PacsFileRegistrationRequest, PacsFileResponse};
+use crate::pacs_file::{tt, PacsFileRegistrationRequest, PacsFileResponse};
 use dicom::dictionary_std::tags;
 use dicom::object::DefaultDicomObject;
 use opentelemetry::trace::{Status, TraceContextExt, Tracer};
@@ -244,9 +244,16 @@ impl ChrisSender {
                 }
                 ChrisSenderJobAction::PushDicom { uuid, pacs_file }
             }
-            Err(_e) => {
-                // todo push error event
-                todo!()
+            Err((e, obj)) => {
+                tracing::error!(
+                    missing_required_tag = e.to_string(),
+                    StudyInstanceUID = tt(&obj, tags::STUDY_INSTANCE_UID),
+                    SeriesInstanceUID = tt(&obj, tags::SERIES_INSTANCE_UID),
+                    SOPInstanceUID = tt(&obj, tags::SOP_INSTANCE_UID),
+                    InstanceNumber = tt(&obj, tags::INSTANCE_NUMBER)
+                );
+                return Vec::with_capacity(0);
+                // TODO push error information to CUBE
             }
         };
         let jobs = if let Some(find_job) = find_job {

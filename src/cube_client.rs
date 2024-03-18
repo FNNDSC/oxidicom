@@ -107,11 +107,11 @@ impl PacsFileRegistration {
     pub(crate) fn new(
         pacs_name: ClientAETitle,
         obj: DefaultDicomObject,
-    ) -> Result<(Self, Vec<BadTag>), MissingRequiredTag> {
-        PacsFileRegistrationRequest::new(pacs_name, &obj).map(|(request, bad_tags)| {
-            let pacs_file = Self { request, obj };
-            (pacs_file, bad_tags)
-        })
+    ) -> Result<(Self, Vec<BadTag>), (MissingRequiredTag, DefaultDicomObject)> {
+        match PacsFileRegistrationRequest::new(pacs_name, &obj) {
+            Ok((request, bad_tags)) => Ok((Self { request, obj }, bad_tags)),
+            Err(e) => Err((e, obj)),
+        }
     }
 }
 
