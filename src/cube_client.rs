@@ -1,6 +1,8 @@
 use crate::dicomrs_options::ClientAETitle;
 use camino::Utf8PathBuf;
 use dicom::object::DefaultDicomObject;
+use opentelemetry::trace::TraceContextExt;
+use opentelemetry::{Context, KeyValue};
 use reqwest::StatusCode;
 use std::time::Duration;
 
@@ -37,6 +39,7 @@ impl CubePacsStorageClient {
         }
     }
 
+    /// Push a DICOM object to _CUBE_.
     pub(crate) fn store(
         &self,
         pacs_file: &PacsFileRegistration,
@@ -49,12 +52,26 @@ impl CubePacsStorageClient {
         self.register_file(&pacs_file.request)
     }
 
+    /// Push a blank file to _CUBE_.
+    pub(crate) fn store_blank(
+        &self,
+        pacs_file: &PacsFileRegistrationRequest,
+    ) -> Result<PacsFileResponse, ChrisPacsError> {
+        let dst = self.dir.join(&pacs_file.path);
+        if let Some(parent) = dst.parent() {
+            fs_err::create_dir_all(parent)?;
+        }
+        fs_err::File::create(dst)?;
+        self.register_file(pacs_file)
+    }
+
     fn register_file(
         &self,
         file: &PacsFileRegistrationRequest,
     ) -> Result<PacsFileResponse, ChrisPacsError> {
         let mut last_error = None;
         let max_retries = self.retries + 1;
+        let context = Context::current();
         for attempt in 1..max_retries {
             match self.send_register_request(file) {
                 Ok(data) => return Ok(data),
@@ -62,10 +79,12 @@ impl CubePacsStorageClient {
                     if should_retry(&e) {
                         if attempt != self.retries {
                             let duration = backoff(attempt);
-                            tracing::warn!(
-                                "Error from CUBE: {:?}. Going to retry after {}s",
-                                &e,
-                                duration.as_secs()
+                            context.span().add_event(
+                                "retry_delay",
+                                vec![
+                                    KeyValue::new("error", e.to_string()),
+                                    KeyValue::new("sleep_duration", duration.as_secs() as i64),
+                                ],
                             );
                             std::thread::sleep(duration);
                         }

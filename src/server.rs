@@ -26,7 +26,7 @@ pub fn run_server(
     address: SocketAddrV4,
     chris: CubePacsStorageClient,
     config: DicomRsConfig,
-    pacs_address: Option<SocketAddrV4>,
+    pacs_address: Option<String>,
     max_pdu_length: usize,
     finite_connections: Option<usize>,
     listener_threads: usize,
@@ -89,7 +89,7 @@ fn run_dicom_listener(
     n_threads: usize,
     max_pdu_length: usize,
     handler: Sender<AssociationEvent>,
-    pacs_address: Option<SocketAddrV4>,
+    pacs_address: Option<String>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(address)?;
     tracing::info!("listening on: tcp://{}", address);
@@ -110,6 +110,7 @@ fn run_dicom_listener(
                 let options = Arc::clone(&options);
                 let handler = Arc::clone(&handler);
                 let ae_title = Arc::clone(&ae_title);
+                let pacs_address = pacs_address.clone();
                 pool.execute(move || {
                     let uuid = Uuid::new_v4();
                     let _context_guard = cx.attach();

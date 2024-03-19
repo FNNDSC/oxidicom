@@ -1,5 +1,3 @@
-use std::net::SocketAddrV4;
-
 use dicom::object::DefaultDicomObject;
 use uuid::Uuid;
 
@@ -16,7 +14,7 @@ pub(crate) enum AssociationEvent {
         /// Our AE title
         aet: OurAETitle,
         /// Address of the client sending us DICOMs
-        pacs_address: Option<SocketAddrV4>,
+        pacs_address: Option<String>,
     },
     /// Received a DICOM file.
     DicomInstance { uuid: Uuid, dcm: DefaultDicomObject },

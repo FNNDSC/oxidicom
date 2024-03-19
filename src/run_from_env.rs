@@ -1,10 +1,11 @@
+use std::net::{Ipv4Addr, SocketAddrV4};
+
+use camino::Utf8PathBuf;
+
 use crate::cube_client::CubePacsStorageClient;
 use crate::dicomrs_options::OurAETitle;
 use crate::server::run_server;
 use crate::DicomRsConfig;
-use anyhow::Context;
-use camino::Utf8PathBuf;
-use std::net::{Ipv4Addr, SocketAddrV4};
 
 /// Calls [run_server] using configuration from environment variables.
 ///
@@ -28,10 +29,7 @@ pub fn run_server_from_env(
         uncompressed_only: envmnt::is_or("CHRIS_SCP_UNCOMPRESSED_ONLY", false),
     };
 
-    let pacs_address = env_option("CHRIS_PACS_ADDRESS")
-        .map(|a| a.parse())
-        .transpose()
-        .context("Invalid value for CHRIS_PACS_ADDRESS")?;
+    let pacs_address = env_option("CHRIS_PACS_ADDRESS");
     let listener_threads =
         listener_threads.unwrap_or_else(|| envmnt::get_usize("CHRIS_LISTENER_THREADS", 16));
     let pusher_threads =

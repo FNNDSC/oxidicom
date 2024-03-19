@@ -1,16 +1,17 @@
 use crate::cube_client::{CubePacsStorageClient, PacsFileRegistration};
-use crate::custom_metadata::SeriesKeySet;
+use crate::custom_metadata::getset_number_of_dicom_instances;
 use crate::dicomrs_options::{ClientAETitle, OurAETitle};
 use crate::error::ChrisPacsError;
 use crate::event::AssociationEvent;
-use crate::pacs_file::{tt, PacsFileRegistrationRequest, PacsFileResponse};
+use crate::findscu::FindScuParameters;
+use crate::pacs_file::{tt, BadTag, PacsFileRegistrationRequest, PacsFileResponse};
+use crate::series_key_set::SeriesKeySet;
 use dicom::dictionary_std::tags;
 use dicom::object::DefaultDicomObject;
 use opentelemetry::trace::{Status, TraceContextExt, Tracer};
 use opentelemetry::{global, KeyValue};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::net::SocketAddrV4;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -54,26 +55,19 @@ impl ChrisSenderInternal {
             .remove(&uuid)
             .expect("Unknown association UUID");
         let series_key: SeriesKeySet = pacs_file.into();
-        if let Some(count) = association.pushed.get_mut(&series_key) {
-            *count += 1;
-            tracing::info!(
-                association_uuid = uuid.hyphenated().to_string(),
-                stage = "middle",
-                SeriesInstanceUID = &series_key.SeriesInstanceUID,
-                pushed = count,
-                received = association.received
-            );
-        } else {
-            tracing::info!(
-                association_uuid = uuid.hyphenated().to_string(),
-                stage = "first",
-                SeriesInstanceUID = &series_key.SeriesInstanceUID
-            );
-            association.pushed.insert(series_key, 1);
-        };
-        let total_pushed: usize = association.pushed.values().sum();
-        assert!(total_pushed <= association.received);
-        if association.finished && association.received == total_pushed {
+        let series = association
+            .series
+            .get_mut(&series_key)
+            .expect("Unknown series");
+        series.pushed += 1;
+        assert!(series.pushed <= series.received);
+        tracing::info!(
+            association_uuid = uuid.hyphenated().to_string(),
+            SeriesInstanceUID = &series_key.SeriesInstanceUID,
+            pushed = series.pushed,
+            received = series.received
+        );
+        if association.finished && association.series.values().all(SeriesProgress::is_uptodate) {
             Some(association)
         } else {
             associations.insert(uuid, association); // put it back
@@ -90,50 +84,74 @@ struct Association {
     /// Our AE title
     aet: OurAETitle,
     /// Address where we are receiving DICOMs from
-    pacs_address: Option<SocketAddrV4>,
-    /// Number of DICOM files received, which may either be pending or pushed
-    received: usize,
-    /// Number of DICOM files which were pushed to CUBE (or attempted to push,
-    /// but had an error and gave up).
-    pushed: HashMap<SeriesKeySet, usize>,
+    pacs_address: Option<String>,
+    /// The unique series we are receiving during this association.
+    /// Typically, in _ChRIS_ one series will be pulled per association. However,
+    /// it is possible for a PACS server to push any number of series it wants to.
+    series: HashMap<SeriesKeySet, SeriesProgress>,
     /// Will there be more DICOM files?
     finished: bool,
 }
 
+#[derive(Debug, Copy, Clone)]
+struct SeriesProgress {
+    /// Number of DICOM files received, which may either be pending, pushed, or given up.
+    received: usize,
+    /// Number of DICOM files which were pushed to CUBE or given up.
+    pushed: usize,
+}
+
+impl Default for SeriesProgress {
+    fn default() -> Self {
+        // at least 1 instance of a series must have been received in order for us to be aware of it
+        Self {
+            received: 1,
+            pushed: 0,
+        }
+    }
+}
+
+impl SeriesProgress {
+    fn is_uptodate(&self) -> bool {
+        self.received == self.pushed
+    }
+}
+
 impl Association {
-    fn new(aec: ClientAETitle, aet: OurAETitle, peer_address: Option<SocketAddrV4>) -> Self {
+    fn new(aec: ClientAETitle, aet: OurAETitle, pacs_address: Option<String>) -> Self {
         Self {
             aec,
             aet,
-            pacs_address: peer_address,
-            pushed: Default::default(),
-            received: 0,
+            pacs_address,
+            series: Default::default(),
             finished: false,
         }
     }
 
+    /// Return the parameters needed to query the PACS for the `NumberOfSeriesRelatedInstances`
+    /// of the given DICOM object. Returns `None` if it is not possible to get the parameters.
     fn find_request(&self, uuid: Uuid, dcm: &DefaultDicomObject) -> Option<FindScuParameters> {
-        if self.received != 0 {
-            return None;
-        }
         // note: findscu parameters are intentionally unsanitized
         let study_instance_uid = dcm
             .element(tags::STUDY_INSTANCE_UID)
             .ok()
             .and_then(|e| e.string().ok())?
             .to_string();
-        self.pacs_address.map(|pacs_address| FindScuParameters {
-            uuid,
-            pacs_address,
-            aec: self.aec.clone(),
-            aet: self.aet.clone(),
-            study_instance_uid,
-            series_instance_uid: dcm
-                .element(tags::SERIES_INSTANCE_UID)
-                .ok()
-                .and_then(|e| e.string().ok())
-                .map(|s| s.to_string()),
-        })
+        let series_instance_uid = dcm
+            .element(tags::SERIES_INSTANCE_UID)
+            .ok()
+            .and_then(|e| e.string().ok())?
+            .to_string();
+        self.pacs_address
+            .clone()
+            .map(|pacs_address| FindScuParameters {
+                uuid,
+                pacs_address,
+                aec: self.aec.clone(),
+                aet: self.aet.clone(),
+                study_instance_uid,
+                series_instance_uid,
+            })
     }
 }
 
@@ -177,7 +195,7 @@ impl ChrisSender {
         uuid: Uuid,
         aec: ClientAETitle,
         aet: OurAETitle,
-        pacs_address: Option<SocketAddrV4>,
+        pacs_address: Option<String>,
     ) {
         let prev = self
             .0
@@ -193,8 +211,7 @@ impl ChrisSender {
     fn set_association_finished(&self, uuid: Uuid, ok: bool) -> Option<ChrisSenderJobAction> {
         let mut associations = self.0.associations.lock().unwrap();
         if let Some(mut association) = associations.remove(&uuid) {
-            let total_pushed: usize = association.pushed.values().sum();
-            if total_pushed == association.received {
+            if association.series.values().all(SeriesProgress::is_uptodate) {
                 // everything done
                 Some(ChrisSenderJobAction::Finalize { uuid, association })
             } else {
@@ -216,35 +233,40 @@ impl ChrisSender {
         }
     }
 
+    /// Decide which jobs to run for an incoming DICOM instance.
+    ///
+    /// - If the DICOM instance has all the required tags, then it needs to be registered to CUBE.
+    /// - If the DICOM instance is the first of its series to be received, then we also want to
+    ///   contact the PACS server and ask it for the `NumberOfSeriesRelatedInstances`.
     fn jobs_for_instance(&self, uuid: Uuid, dcm: DefaultDicomObject) -> Vec<ChrisSenderJobAction> {
         let mut associations = self.0.associations.lock().unwrap();
         let association = associations.get_mut(&uuid).expect("Unknown UUID");
-        association.received += 1;
-        let find_job = association
-            .find_request(uuid, &dcm)
-            .map(|params| ChrisSenderJobAction::GetNumberOfRelatedInstances { uuid, params });
-        let push_job = match PacsFileRegistration::new(association.aec.clone(), dcm) {
+        let findscu_params = association.find_request(uuid, &dcm);
+        match PacsFileRegistration::new(association.aec.clone(), dcm) {
             Ok((pacs_file, bad_tags)) => {
-                if !bad_tags.is_empty() {
-                    // let bts: Vec<_> = bad_tags
-                    //     .into_iter()
-                    //     .map(|b| b.to_string())
-                    //     .map(StringValue::from)
-                    //     .collect();
-                    // let value = Value::Array(Array::String(bts));
-                    // cx.span().set_attribute(KeyValue::new("bad_tags", value))
-                    tracing::warn!(
-                        path = &pacs_file.request.path,
-                        bad_tags = bad_tags
-                            .into_iter()
-                            .map(|b| b.to_string())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    );
+                warn_for_bad_tags(&pacs_file.request.path, &bad_tags);
+
+                let series_key = SeriesKeySet::from(pacs_file.request.clone());
+                if let Some(series) = association.series.get_mut(&series_key) {
+                    series.received += 1;
+                    vec![ChrisSenderJobAction::PushDicom { uuid, pacs_file }]
+                } else {
+                    // received first instance of a series
+                    association
+                        .series
+                        .insert(series_key.clone(), Default::default());
+                    vec![
+                        ChrisSenderJobAction::PushDicom { uuid, pacs_file },
+                        ChrisSenderJobAction::GetNumberOfRelatedInstances {
+                            uuid,
+                            series: series_key,
+                            params: findscu_params,
+                        },
+                    ]
                 }
-                ChrisSenderJobAction::PushDicom { uuid, pacs_file }
             }
             Err((e, obj)) => {
+                // TODO push error information to CUBE
                 tracing::error!(
                     missing_required_tag = e.to_string(),
                     StudyInstanceUID = tt(&obj, tags::STUDY_INSTANCE_UID),
@@ -252,16 +274,9 @@ impl ChrisSender {
                     SOPInstanceUID = tt(&obj, tags::SOP_INSTANCE_UID),
                     InstanceNumber = tt(&obj, tags::INSTANCE_NUMBER)
                 );
-                return Vec::with_capacity(0);
-                // TODO push error information to CUBE
+                Vec::with_capacity(0)
             }
-        };
-        let jobs = if let Some(find_job) = find_job {
-            vec![find_job, push_job]
-        } else {
-            vec![push_job]
-        };
-        jobs
+        }
     }
 
     fn with_sender(
@@ -278,6 +293,27 @@ impl ChrisSender {
     }
 }
 
+fn warn_for_bad_tags(pacsfile_path: &str, bad_tags: &[BadTag]) {
+    if bad_tags.is_empty() {
+        return;
+    }
+    // let bts: Vec<_> = bad_tags
+    //     .into_iter()
+    //     .map(|b| b.to_string())
+    //     .map(StringValue::from)
+    //     .collect();
+    // let value = Value::Array(Array::String(bts));
+    // cx.span().set_attribute(KeyValue::new("bad_tags", value))
+    tracing::warn!(
+        pacsfile_path = pacsfile_path,
+        bad_tags = bad_tags
+            .iter()
+            .map(|b| b.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+}
+
 /// A job which performs I/O to handle an [AssociationEvent].
 pub(crate) struct ChrisSenderJob {
     sender: Arc<ChrisSenderInternal>,
@@ -287,8 +323,12 @@ pub(crate) struct ChrisSenderJob {
 enum ChrisSenderJobAction {
     /// Send a C-FIND message to the PACS server to get `NumberOfSeriesRelatedInstances`.
     GetNumberOfRelatedInstances {
+        /// Association UUID
         uuid: Uuid,
-        params: FindScuParameters,
+        /// Series to get number of instances for
+        series: SeriesKeySet,
+        /// Parameters for `findscu`. Might be `None` if parameters cannot be determined.
+        params: Option<FindScuParameters>,
     },
     PushDicom {
         uuid: Uuid,
@@ -300,32 +340,15 @@ enum ChrisSenderJobAction {
     },
 }
 
-// TODO
-// /usr/bin/findscu -xi -S  -k AccessionNumber -k AcquisitionProtocolDescription
-// -k AcquisitionProtocolName -k InstanceNumber -k ModalitiesInStudy -k Modality
-// -k NumberOfPatientRelatedInstances -k NumberOfPatientRelatedSeries
-// -k NumberOfPatientRelatedStudies -k NumberOfSeriesRelatedInstances
-// -k NumberOfStudyRelatedInstances -k NumberOfStudyRelatedSeries -k PatientAge
-// -k PatientBirthDate -k PatientID -k PatientName -k PatientSex -k PerformedStationAETitle
-// -k ProtocolName -k "QueryRetrieveLevel=STUDY" -k SeriesDate -k SeriesDescription
-// -k SeriesInstanceUID -k StudyDate -k StudyDescription
-// -k "StudyInstanceUID=x.x.x.xxxxx"  -aec ORTHANC -aet CHRISLOCAL
-pub(crate) struct FindScuParameters {
-    uuid: Uuid,
-    pacs_address: SocketAddrV4,
-    aec: ClientAETitle,
-    aet: OurAETitle,
-    study_instance_uid: String,
-    series_instance_uid: Option<String>,
-}
-
 impl ChrisSenderJob {
     /// Run this job. Since the job will do I/O, it is recommended to move this to a thread.
     pub(crate) fn run(self) -> Result<(), ChrisPacsError> {
         match self.action {
-            ChrisSenderJobAction::GetNumberOfRelatedInstances { uuid, params } => {
-                getset_number_of_dicom_instances(&self.sender, uuid, params)
-            }
+            ChrisSenderJobAction::GetNumberOfRelatedInstances {
+                uuid,
+                series,
+                params,
+            } => getset_number_of_dicom_instances(&self.sender.client, uuid, params, series),
             ChrisSenderJobAction::PushDicom { uuid, pacs_file } => {
                 push_dicom_wrapper(&self.sender, uuid, pacs_file)
             }
@@ -338,17 +361,6 @@ impl ChrisSenderJob {
             }
         }
     }
-}
-
-/// Send a C-FIND request to the PACS server to obtain `NumberOfSeriesRelatedInstances`.
-/// Store this information in _CUBE_ via the "Oxidicom Custom Metadata" spec.
-fn getset_number_of_dicom_instances(
-    client: &ChrisSenderInternal,
-    uuid: Uuid,
-    params: FindScuParameters,
-) -> Result<(), ChrisPacsError> {
-    tracing::warn!("getset_number_of_dicom_instances not implemented");
-    Ok(())
 }
 
 /// Push DICOMs to CUBE. This function calls [CubePacsStorageClient::store] with

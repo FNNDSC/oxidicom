@@ -29,6 +29,7 @@ services:
       CHRIS_USERNAME: chris
       CHRIS_PASSWORD: chris1234
       CHRIS_SCP_AET: OXIDICOMTEST
+      CHRIS_PACS_ADDRESS: orthanc:4242
       PORT: 11112
       CHRIS_LISTENER_THREADS: 8
       CHRIS_PUSHER_THREADS: ${CHRIS_PUSHER_THREADS:-4}
@@ -37,6 +38,7 @@ services:
       OTEL_RESOURCE_ATTRIBUTES: service.name=oxidicom-test
       CARGO_TARGET_DIR: /target
       CARGO_HOME: /cargo
+      RUST_BACKTRACE: full
     depends_on:
       - rust-target-dir-permissions
       - orthanc

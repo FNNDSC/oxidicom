@@ -22,7 +22,7 @@ use crate::patient_age::parse_age;
 use crate::sanitize::sanitize;
 
 /// POST request body to CUBE `api/v1/pacsfiles/`
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct PacsFileRegistrationRequest {
     pub path: String,
     pub PatientID: String,

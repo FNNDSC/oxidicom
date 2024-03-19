@@ -41,6 +41,7 @@ Now, _CUBE_ is the bottleneck. See the section on [Performance Tuning](#performa
 | `CHRIS_SCP_STRICT`            | Whether receiving PDUs must not surpass the negotiated maximum PDU length.                              |
 | `CHRIS_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                      |
 | `CHRIS_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                       |                                                      
+| `CHRIS_PACS_ADDRESS`          | PACS server address (optional, for getting the `NumberOfSeriesRelatedInstances`)                        |
 | `CHRIS_LISTENER_THREADS`      | Maximum number of concurrent SCU clients to handle. (see [Performance Tuning](#performance-tuning))     |
 | `CHRIS_PUSHER_THREADS`        | Maximum number of concurrent HTTP requests to _CUBE_. (see [Performance Tuning](#performance-tuning))   |
 | `CHRIS_VERBOSE`               | Set as `yes` to show debugging messages                                                                 |
@@ -91,6 +92,9 @@ before needing to scale `oxidicom`, so who cares ¯\\\_(ツ)\_/¯
   be resolved, see https://github.com/Enet4/dicom-rs/issues/477
 - If _CUBE_'s response times are slow, then `oxidicom` will experience backpressure
   and its memory usage will start to balloon.
+- If a PACS retrieve was triggered twice, even though the first one was successful,
+  the file will be overwritten in CUBE's storage, but the second registration will fail.
+  Assuming the file sent by PACS did not change, the operation is idempotent.
 
 ## "Oxidicom Custom Metadata" Spec
 
@@ -101,9 +105,7 @@ does not track how many instances _should_ there be for a series (`NumberOfSerie
 https://github.com/FNNDSC/ChRIS_ultron_backEnd/issues/544
 
 As a hacky workaround for this shortcoming, `oxidicom` will push dummy files into _CUBE_ as PACSFiles
-under the space `SERVICES/PACS/org.chrisproject.oxidicom`.
-
-TODO
+under the space `SERVICES/PACS/org.fnndsc.oxidicom`. See [CUSTOM_SPEC.md](./CUSTOM_SPEC.md).
 
 ## Development
 

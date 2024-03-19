@@ -3,7 +3,7 @@
 //! File mostly copied from dicom-rs.
 //! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs
 
-use std::net::{SocketAddrV4, TcpStream};
+use std::net::TcpStream;
 use std::sync::mpsc::Sender;
 
 use dicom::core::{DataElement, VR};
@@ -35,7 +35,7 @@ pub fn handle_association(
     channel: &Sender<AssociationEvent>,
     uuid: Uuid,
     aet: &OurAETitle,
-    pacs_address: Option<SocketAddrV4>,
+    pacs_address: Option<String>,
 ) -> Result<(), AssociationError> {
     let mut association = options.establish(scu_stream).map_err(CouldNotEstablish)?;
     let context = opentelemetry::Context::current();
