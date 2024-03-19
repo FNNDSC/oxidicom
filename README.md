@@ -56,8 +56,12 @@ Internally, `oxidicom` runs two thread pools:
 - "Pusher" pushes received DICOM files to CUBE
 
 The number of threads to use for the "listener" and "pusher" components are configured by
-`CHRIS_LISTENER_THREADS` and `CHRIS_PUSHER_THREADS` respectively. `CHRIS_LISTENER_THREADS`
-_should_ be equal to or greater than `CHRIS_PUSHER_THREADS`.
+`CHRIS_LISTENER_THREADS` and `CHRIS_PUSHER_THREADS` respectively.
+
+<details>
+<summary>
+Resource usage, and on the choice of an in-memory queue
+</summary>
 
 In an older version of `oxidicom`, "listening" and "pushing" were synchronous.
 With 16 threads, the resource usage of `oxidicom` would not exceed 0.5 CPU and
@@ -70,8 +74,7 @@ It would be more "cloud-native" for the "listener" and "pusher" activities to li
 microservices which communicate over RabbitMQ. However, we'll have to scale up _CUBE_ by 20 time
 before needing to scale `oxidicom`, so who cares ¯\\\_(ツ)\_/¯
 
-If _CUBE_'s response times are slow, especially if `CHRIS_PUSHER_THREADS` < `CHRIS_LISTENER_THREADS`,
-then `oxidicom` will experience backpressure and its memory usage will start to balloon.
+</details>
 
 ## Failure Modes
 
@@ -86,6 +89,8 @@ then `oxidicom` will experience backpressure and its memory usage will start to 
   the association. In this case, `oxidicom` will be aware that the abortion and the
   OpenTelemetry span for this association will have `status=error`. This can maybe
   be resolved, see https://github.com/Enet4/dicom-rs/issues/477
+- If _CUBE_'s response times are slow, then `oxidicom` will experience backpressure
+  and its memory usage will start to balloon.
 
 ## "Oxidicom Custom Metadata" Spec
 
