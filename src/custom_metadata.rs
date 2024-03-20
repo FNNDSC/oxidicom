@@ -49,11 +49,20 @@ fn store_blank_wrapper(
     let tracer = global::tracer(env!("CARGO_PKG_NAME"));
     tracer.in_span("store_blank", |cx| match client.store_blank(&pacs_file) {
         Ok(res) => {
+            // The "Oxidicom Custom Metadata" spec requires that
+            // the key is stored as ProtocolName and the value is stored as SeriesDescription
+            let key = res.ProtocolName.clone().unwrap_or_else(|| "".to_string());
+            let value = res
+                .SeriesDescription
+                .clone()
+                .unwrap_or_else(|| "".to_string());
             cx.span().set_attributes([
                 KeyValue::new("StudyInstanceUID", res.StudyInstanceUID.to_string()),
                 KeyValue::new("SeriesInstanceUID", res.SeriesInstanceUID.to_string()),
                 KeyValue::new("fname", res.fname.to_string()),
                 KeyValue::new("url", res.url.to_string()),
+                KeyValue::new("oxidicom.custom.key", key),
+                KeyValue::new("oxidicom.custom.value", value),
             ]);
             Ok(res)
         }

@@ -348,7 +348,9 @@ impl ChrisSenderJob {
                 uuid,
                 series,
                 params,
-            } => getset_number_of_series_related_instances(&self.sender.client, uuid, params, series),
+            } => {
+                getset_number_of_series_related_instances(&self.sender.client, uuid, params, series)
+            }
             ChrisSenderJobAction::PushDicom { uuid, pacs_file } => {
                 push_dicom_wrapper(&self.sender, uuid, pacs_file)
             }
