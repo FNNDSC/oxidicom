@@ -1,5 +1,5 @@
 use crate::cube_client::{CubePacsStorageClient, PacsFileRegistration};
-use crate::custom_metadata::getset_number_of_dicom_instances;
+use crate::custom_metadata::getset_number_of_series_related_instances;
 use crate::dicomrs_options::{ClientAETitle, OurAETitle};
 use crate::error::ChrisPacsError;
 use crate::event::AssociationEvent;
@@ -348,7 +348,7 @@ impl ChrisSenderJob {
                 uuid,
                 series,
                 params,
-            } => getset_number_of_dicom_instances(&self.sender.client, uuid, params, series),
+            } => getset_number_of_series_related_instances(&self.sender.client, uuid, params, series),
             ChrisSenderJobAction::PushDicom { uuid, pacs_file } => {
                 push_dicom_wrapper(&self.sender, uuid, pacs_file)
             }

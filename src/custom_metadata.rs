@@ -10,14 +10,14 @@ use uuid::Uuid;
 
 /// Send a C-FIND request to the PACS server to obtain `NumberOfSeriesRelatedInstances`.
 /// Store this information in _CUBE_ via the "Oxidicom Custom Metadata" spec.
-pub(crate) fn getset_number_of_dicom_instances(
+pub(crate) fn getset_number_of_series_related_instances(
     client: &CubePacsStorageClient,
     uuid: Uuid,
     params: Option<FindScuParameters>,
     series: SeriesKeySet,
 ) -> Result<(), ChrisPacsError> {
     let tracer = global::tracer(env!("CARGO_PKG_NAME"));
-    tracer.in_span("getset_number_of_dicom_instances", |cx| {
+    tracer.in_span("getset_number_of_series_related_instances", |cx| {
         let number_of_series_related_instances = params
             .and_then(|p| p.get_number_of_series_related_instances())
             .map(|num| num.to_string())
