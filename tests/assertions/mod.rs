@@ -1,6 +1,7 @@
 use crate::{CALLED_AE_TITLE, EXAMPLE_SERIES_INSTANCE_UIDS};
 use chris::types::{CubeUrl, Username};
 use chris::ChrisClient;
+use std::time::Duration;
 
 pub fn run_assertions(expected_counts: &[usize]) {
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -23,6 +24,12 @@ async fn assertions(expected_counts: &[usize]) {
             .unwrap();
         assert_eq!(actual_count, *expected_count);
 
+        // It might take "Oxidicom Custom Metadata" files a little bit more time to appear
+        // after all DICOM files were pushed. So we sleep for 1 second, but no more.
+        // (If they don't appear within 1 second, the performance is too bad, and we will
+        // fail this test.)
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
         // the "Oxidicom Custom Metadata" spec should store the NumberOfSeriesRelatedInstances
         // in a blank file with the filename NumberOfSeriesRelatedInstances=value,
         // and searchable by ProtocolName.
@@ -34,7 +41,7 @@ async fn assertions(expected_counts: &[usize]) {
             .get_first()
             .await
             .unwrap()
-            .expect("Oxidicom Custom Metadata file for NumberOfSeriesRelatedInstances not found. Usually, it should be registered before all DICOM instances are done being registered.")
+            .expect("\"Oxidicom Custom Metadata\" file for NumberOfSeriesRelatedInstances not found. Usually, it should be registered before all DICOM instances are done being registered.")
             .object;
 
         // The value should be stored as the SeriesDescription
@@ -50,6 +57,20 @@ async fn assertions(expected_counts: &[usize]) {
             .unwrap_or(custom_file_num_related.fname.as_str());
         let expected_basename = format!("NumberOfSeriesRelatedInstances={expected_count}");
         assert_eq!(actual_basename, &expected_basename);
+
+        // the "Oxidicom Custom Metadata" spec should store the OxidicomAttemptedPushCount
+        // in a blank file with the filename OxidicomAttemptedPushCount=value,
+        // and searchable by ProtocolName.
+        let custom_file_num_attempts = client.pacsfiles()
+            .pacs_identifier(oxidicom::OXIDICOM_CUSTOM_PACS_NAME)
+            .series_instance_uid(*series)
+            .protocol_name("OxidicomAttemptedPushCount")
+            .search()
+            .get_first()
+            .await
+            .unwrap()
+            .expect("\"Oxidicom Custom Metadata\" file for OxidicomAttemptedPushCount not found. It should be registered after the last DICOM file was pushed.")
+            .object;
     }
 }
 

@@ -105,7 +105,105 @@ for a series with `SeriesInstanceUID=1.3.12.2.1107.5.2.19.45152.2013030808061520
 
 Or, leave out the `&ProtocolName=` query to get both `NumberOfSeriesRelatedInstances` and `OxidicomAttemptedPushCount`.
 
-TODO EXAMPLE RESPONSE.
+## Example Response Body from CUBE
+
+```json
+{
+    "count": 4,
+    "next": null,
+    "previous": null,
+    "results": [
+        {
+            "url": "https://example.org/api/v1/pacsfiles/1747/",
+            "id": 1747,
+            "creation_date": "2024-03-20T17:22:41.432808-04:00",
+            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/ba302287-cb03-4cdd-a01e-9027c8dbfee7/OxidicomAttemptedPushCount=192",
+            "fsize": 0,
+            "PatientID": "1449c1d",
+            "PatientName": "",
+            "PatientBirthDate": null,
+            "PatientAge": null,
+            "PatientSex": "",
+            "StudyDate": "2013-03-08",
+            "AccessionNumber": "",
+            "Modality": "",
+            "ProtocolName": "OxidicomAttemptedPushCount",
+            "StudyInstanceUID": "1.2.840.113845.11.1000000001785349915.20130308061609.6346698",
+            "StudyDescription": "",
+            "SeriesInstanceUID": "1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0",
+            "SeriesDescription": "192",
+            "pacs_identifier": "org.fnndsc.oxidicom",
+            "file_resource": "https://example.org/api/v1/pacsfiles/1747/OxidicomAttemptedPushCount=192"
+        },
+        {
+            "url": "https://example.org/api/v1/pacsfiles/1553/",
+            "id": 1553,
+            "creation_date": "2024-03-20T17:22:17.754581-04:00",
+            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/ba302287-cb03-4cdd-a01e-9027c8dbfee7/NumberOfSeriesRelatedInstances=192",
+            "fsize": 0,
+            "PatientID": "1449c1d",
+            "PatientName": "",
+            "PatientBirthDate": null,
+            "PatientAge": null,
+            "PatientSex": "",
+            "StudyDate": "2013-03-08",
+            "AccessionNumber": "",
+            "Modality": "",
+            "ProtocolName": "NumberOfSeriesRelatedInstances",
+            "StudyInstanceUID": "1.2.840.113845.11.1000000001785349915.20130308061609.6346698",
+            "StudyDescription": "",
+            "SeriesInstanceUID": "1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0",
+            "SeriesDescription": "192",
+            "pacs_identifier": "org.fnndsc.oxidicom",
+            "file_resource": "https://example.org/api/v1/pacsfiles/1553/NumberOfSeriesRelatedInstances=192"
+        },
+        {
+            "url": "https://example.org/api/v1/pacsfiles/2126/",
+            "id": 2126,
+            "creation_date": "2024-03-20T17:23:29.017147-04:00",
+            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/02-Jane_Doe-19660101/Hanke_Stadler_0024_transrep-AccessionNumber-20130717/401-anat-T1w-661b8fc/772bc789-429e-474d-aa64-044b4002f56e/OxidicomAttemptedPushCount=384",
+            "fsize": 0,
+            "PatientID": "02",
+            "PatientName": "",
+            "PatientBirthDate": null,
+            "PatientAge": null,
+            "PatientSex": "",
+            "StudyDate": "2013-07-17",
+            "AccessionNumber": "",
+            "Modality": "",
+            "ProtocolName": "OxidicomAttemptedPushCount",
+            "StudyInstanceUID": "1.2.826.0.1.3680043.2.1143.2592092611698916978113112155415165916",
+            "StudyDescription": "",
+            "SeriesInstanceUID": "1.2.826.0.1.3680043.2.1143.515404396022363061013111326823367652",
+            "SeriesDescription": "384",
+            "pacs_identifier": "org.fnndsc.oxidicom",
+            "file_resource": "https://example.org/api/v1/pacsfiles/2126/OxidicomAttemptedPushCount=384"
+        },
+        {
+            "url": "https://example.org/api/v1/pacsfiles/1742/",
+            "id": 1742,
+            "creation_date": "2024-03-20T17:22:40.538847-04:00",
+            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/02-Jane_Doe-19660101/Hanke_Stadler_0024_transrep-AccessionNumber-20130717/401-anat-T1w-661b8fc/772bc789-429e-474d-aa64-044b4002f56e/NumberOfSeriesRelatedInstances=384",
+            "fsize": 0,
+            "PatientID": "02",
+            "PatientName": "",
+            "PatientBirthDate": null,
+            "PatientAge": null,
+            "PatientSex": "",
+            "StudyDate": "2013-07-17",
+            "AccessionNumber": "",
+            "Modality": "",
+            "ProtocolName": "NumberOfSeriesRelatedInstances",
+            "StudyInstanceUID": "1.2.826.0.1.3680043.2.1143.2592092611698916978113112155415165916",
+            "StudyDescription": "",
+            "SeriesInstanceUID": "1.2.826.0.1.3680043.2.1143.515404396022363061013111326823367652",
+            "SeriesDescription": "384",
+            "pacs_identifier": "org.fnndsc.oxidicom",
+            "file_resource": "https://example.org/api/v1/pacsfiles/1742/NumberOfSeriesRelatedInstances=384"
+        }
+    ]
+}
+```
 
 ## NumberOfSeriesRelatedInstances
 

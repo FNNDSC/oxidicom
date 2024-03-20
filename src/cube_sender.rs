@@ -1,5 +1,7 @@
 use crate::cube_client::{CubePacsStorageClient, PacsFileRegistration};
-use crate::custom_metadata::getset_number_of_series_related_instances;
+use crate::custom_metadata::{
+    getset_number_of_series_related_instances, register_all_attempted_pushes,
+};
 use crate::dicomrs_options::{ClientAETitle, OurAETitle};
 use crate::error::ChrisPacsError;
 use crate::event::AssociationEvent;
@@ -416,9 +418,11 @@ fn register_end_of_association(
     uuid: Uuid,
     association: Association,
 ) -> Vec<Result<PacsFileResponse, ChrisPacsError>> {
+    let attempts_per_series = association.series.into_iter().map(|(s, p)| (s, p.pushed));
+    let result = register_all_attempted_pushes(&sender.client, uuid, attempts_per_series);
     tracing::info!(
         association_uuid = uuid.hyphenated().to_string(),
-        stage = "end"
+        status = "everything was pushed"
     );
-    Vec::with_capacity(0)
+    result
 }
