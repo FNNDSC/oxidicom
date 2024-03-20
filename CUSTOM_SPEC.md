@@ -7,11 +7,12 @@ These files contain useful information about the PACS retrieval process, such as
 - Number of DICOM files received by `oxidicom` for each series per [association](#association).
 - Any errors (TODO)
 
-These empty files will always live under the path `SERVICES/PACS/org.fnndsc.oxidicom`.
+These empty files will always live under the path `SERVICES/PACS/org.fnndsc.oxidicom` and be searchable by
+`pacs_identifier=org.fnndsc.oxidicom`.
 
 ## Background
 
-A "PACS Pull" is initiated when _pfdcm_ tells the (hospital) PACS server to send us DICOMs.
+A "PACS Pull" is initiated when _pfdcm_ asks the (hospital) PACS server to send us DICOMs.
 The hospital PACS server will open a TCP connection with `oxidicom` and send it some DICOM objects.
 In a typical _ChRIS_ workflow, users pull DICOM **series**, which contain zero or more DICOM **instances**.
 Each DICOM instance is represented by one DICOM file.
@@ -33,7 +34,7 @@ however during the retrieval of DICOM files, the PACS' role is a client.)
 
 The TCP connection made by the hospital PACS to `oxidicom` in which DICOM files are received is called a
 **DICOM association.** During an association, we typically receive one series, which is typically comprised of
-one or more DICOM instances. In reality, the PACS can send us a study, a patient, anything, or nothing.
+one or more DICOM instances. In reality, the PACS could possibly send us a study, a patient, anything, or nothing.
 
 ## Association UUID Path
 
@@ -78,7 +79,7 @@ SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized
 SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/OxidicomCompletePushCount=192
 ```
 
-What if the hospital PACS misbehaves, sending us a different `NumberOfSeriesRelatedInstances` on the third retrieve attempt?
+What if the hospital PACS _misbehaves_, sending us a different `NumberOfSeriesRelatedInstances` on the third retrieve attempt?
 You will find:
 
 ```
@@ -165,3 +166,30 @@ Push to CUBE          |      [=====|=====|=============================]
                       |
                       First DICOM received by oxidicom from PACS
 ```
+
+## Suggested Client Implementation
+
+A simple client implementation would just poll for the existence of a `OxidicomCompletePushCount=*` to know
+when a PACS retrieve operation is complete. Doing so assumes that (a) the PACS server is well-behaved,
+(b) everything between PFDCM <--> PACS <--> oxidicom <--> CUBE is working smoothly. These assumptions are
+usually true, however this implementation can cause silent errors.
+
+Ideally, a client who wants to monitor the progress of a PACS pull operation _should_ poll _CUBE_ for:
+
+- The `count` of real DICOM files, e.g. `api/v1/pacsfiles/search/?pacs_identifier=HOSPITALPACS&SeriesInstanceUID=x.x.x.xxxxx`
+- The `NumberOfSeriesRelatedInstances`, e.g. `api/v1/pacsfiles/search/?min_creation_date=TTTTTTTT&pacs_identifier=org.fnndsc.oxidicom&SeriesInstanceUID=x.x.x.xxxxx&ProtocolName=NumberOfSeriesRelatedInstances`
+- The `OxidicomCompletePushCount`, e.g. `api/v1/pacsfiles/search/?min_creation_date=TTTTTTTT&pacs_identifier=HOSPITALPACS&SeriesInstanceUID=x.x.x.xxxxx&ProtocolName=OxidicomCompletePushCount`
+
+Where:
+
+- `HOSPITALPACS` is the PACS AE title the DICOMs are being retrieved from
+- `x.x.x.xxxxx` is the SeriesInstanceUID of interest
+- `TTTTTTTT` is the timestamp the retrieve operation was initiated by PFDCM
+
+Explanation of query string parameters:
+
+- `pacs_identifier=HOSPITALPACS&SeriesInstanceUID=x.x.x.xxxxx` searches for DICOM files of the series
+- `pacs_identifier=org.fnndsc.oxidicom&SeriesInstanceUID=x.x.x.xxxxx` searches for "Oxidicom Custom Metadata" for the series
+- `pacs_identifier=org.fnndsc.oxidicom&ProtocolName=NumberOfSeriesRelatedInstances` searches for files representing `NumberOfSeriesRelatedInstances=*`
+- `pacs_identifier=org.fnndsc.oxidicom&ProtocolName=OxidicomCompletePushCount` searches for files representing `OxidicomCompletePushCount=*`
+- `min_creation_date=TTTTTTTT` limits search results to only the most recent PACS retrieve attempt (ignoring the "Oxidicom Custom Metadata" of prior attempts)
