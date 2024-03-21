@@ -3,6 +3,7 @@
 //! File mostly copied from dicom-rs.
 //! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs
 
+use std::collections::HashMap;
 use std::net::TcpStream;
 use std::sync::mpsc::Sender;
 
@@ -35,11 +36,12 @@ pub fn handle_association(
     channel: &Sender<AssociationEvent>,
     uuid: Uuid,
     aet: &OurAETitle,
-    pacs_address: Option<String>,
+    pacs_addresses: &HashMap<ClientAETitle, String>,
 ) -> Result<(), AssociationError> {
     let mut association = options.establish(scu_stream).map_err(CouldNotEstablish)?;
     let context = opentelemetry::Context::current();
-    let aec = association.client_ae_title();
+    let aec = ClientAETitle::from(association.client_ae_title());
+    let pacs_address = pacs_addresses.get(&aec).map(|s| s.to_string());
     context
         .span()
         .set_attribute(KeyValue::new("aet", aec.to_string()));
@@ -47,7 +49,7 @@ pub fn handle_association(
         .send(AssociationEvent::Start {
             uuid,
             aet: aet.clone(),
-            aec: ClientAETitle::from(aec),
+            aec,
             pacs_address,
         })
         .unwrap();

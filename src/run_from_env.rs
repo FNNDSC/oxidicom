@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use camino::Utf8PathBuf;
 
 use crate::cube_client::CubePacsStorageClient;
-use crate::dicomrs_options::OurAETitle;
+use crate::dicomrs_options::{ClientAETitle, OurAETitle};
 use crate::server::run_server;
 use crate::DicomRsConfig;
 
@@ -29,7 +30,7 @@ pub fn run_server_from_env(
         uncompressed_only: envmnt::is_or("CHRIS_SCP_UNCOMPRESSED_ONLY", false),
     };
 
-    let pacs_address = env_option("CHRIS_PACS_ADDRESS");
+    let pacs_addresses = parse_string_dict(envmnt::get_or("CHRIS_PACS_ADDRESS", ""))?;
     let listener_threads =
         listener_threads.unwrap_or_else(|| envmnt::get_usize("CHRIS_LISTENER_THREADS", 16));
     let pusher_threads =
@@ -39,7 +40,7 @@ pub fn run_server_from_env(
         address,
         chris,
         dicomrs_config,
-        pacs_address,
+        pacs_addresses,
         max_pdu_length,
         finite_connections,
         listener_threads,
@@ -53,5 +54,55 @@ fn env_option(name: &'static str) -> Option<String> {
         None
     } else {
         Some(value)
+    }
+}
+
+fn parse_string_dict(s: impl AsRef<str>) -> anyhow::Result<HashMap<ClientAETitle, String>> {
+    s.as_ref()
+        .split(',')
+        .filter_map(|part| {
+            let trimmed = part.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .map(parse_key_value_pair)
+        .collect()
+}
+
+fn parse_key_value_pair(s: &str) -> anyhow::Result<(ClientAETitle, String)> {
+    s.split_once('=')
+        .map(|(l, r)| (ClientAETitle::from(l), r.to_string()))
+        .ok_or_else(|| {
+            anyhow::Error::msg(format!(
+                "Bad value for CHRIS_PACS_ADDRESS: \"{s}\" does not contain a '='"
+            ))
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_string_dict;
+    use crate::dicomrs_options::ClientAETitle;
+    use rstest::*;
+    use std::collections::HashMap;
+
+    #[rstest]
+    #[case("", [])]
+    #[case("BCH=1.2.3.4:4242", [("BCH", "1.2.3.4:4242")])]
+    #[case("BCH=1.2.3.4:4242,", [("BCH", "1.2.3.4:4242")])]
+    #[case("BCH=1.2.3.4:4242,MGH=5.6.7.8:9090", [("BCH", "1.2.3.4:4242"), ("MGH", "5.6.7.8:9090")])]
+    fn test_parse_string_dict(
+        #[case] given: &str,
+        #[case] expected: impl IntoIterator<Item = (&'static str, &'static str)>,
+    ) {
+        let expected: HashMap<_, _> = expected
+            .into_iter()
+            .map(|(aec, addr)| (ClientAETitle::from_static(aec), addr.to_string()))
+            .collect();
+        let actual = parse_string_dict(given).unwrap();
+        assert_eq!(actual, expected)
     }
 }

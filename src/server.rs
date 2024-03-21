@@ -1,12 +1,13 @@
 use crate::cube_client::CubePacsStorageClient;
 use crate::cube_sender::ChrisSender;
-use crate::dicomrs_options::DicomRsConfig;
+use crate::dicomrs_options::{ClientAETitle, DicomRsConfig};
 use crate::event::AssociationEvent;
 use crate::scp::handle_association;
 use crate::thread_pool::ThreadPool;
 use opentelemetry::trace::{Status, TraceContextExt, Tracer};
 use opentelemetry::{global, Context, KeyValue};
 use opentelemetry_semantic_conventions as semconv;
+use std::collections::HashMap;
 use std::net::{SocketAddrV4, TcpListener, TcpStream};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
@@ -26,7 +27,7 @@ pub fn run_server(
     address: SocketAddrV4,
     chris: CubePacsStorageClient,
     config: DicomRsConfig,
-    pacs_address: Option<String>,
+    pacs_addresses: HashMap<ClientAETitle, String>,
     max_pdu_length: usize,
     finite_connections: Option<usize>,
     listener_threads: usize,
@@ -42,7 +43,7 @@ pub fn run_server(
             listener_threads,
             max_pdu_length,
             rx,
-            pacs_address,
+            pacs_addresses,
         )
     });
     listener.join().unwrap()?;
@@ -89,12 +90,13 @@ fn run_dicom_listener(
     n_threads: usize,
     max_pdu_length: usize,
     handler: Sender<AssociationEvent>,
-    pacs_address: Option<String>,
+    pacs_addresses: HashMap<ClientAETitle, String>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(address)?;
     tracing::info!("listening on: tcp://{}", address);
     let mut pool = ThreadPool::new(n_threads, "dicom_listener");
     let ae_title = Arc::new(config.aet.clone());
+    let pacs_addresses = Arc::new(pacs_addresses);
     let options = Arc::new(config.into());
     let handler = Arc::new(handler);
     let incoming: Box<dyn Iterator<Item = Result<TcpStream, _>>> =
@@ -110,7 +112,7 @@ fn run_dicom_listener(
                 let options = Arc::clone(&options);
                 let handler = Arc::clone(&handler);
                 let ae_title = Arc::clone(&ae_title);
-                let pacs_address = pacs_address.clone();
+                let pacs_address = Arc::clone(&pacs_addresses);
                 pool.execute(move || {
                     let uuid = Uuid::new_v4();
                     let _context_guard = cx.attach();
@@ -133,7 +135,7 @@ fn run_dicom_listener(
                         &handler,
                         uuid,
                         &ae_title,
-                        pacs_address,
+                        &pacs_address,
                     ) {
                         Ok(..) => {
                             handler
