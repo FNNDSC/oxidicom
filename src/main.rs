@@ -27,8 +27,8 @@ fn init_otel_tracing() -> Result<(), opentelemetry::trace::TraceError> {
 }
 
 fn init_tracing_subscriber() -> Result<(), tracing::dispatcher::SetGlobalDefaultError> {
-    let verbose_option = envmnt::get_or("CHRIS_VERBOSE", "");
-    let level = if verbose_option.to_lowercase().starts_with("y") {
+    let verbose_option = envmnt::get_or("CHRIS_VERBOSE", "").to_lowercase();
+    let level = if verbose_option.starts_with("y") || &verbose_option == "true" {
         tracing::Level::INFO
     } else {
         tracing::Level::WARN

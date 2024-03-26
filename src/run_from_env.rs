@@ -48,15 +48,6 @@ pub fn run_server_from_env(
     )
 }
 
-fn env_option(name: &'static str) -> Option<String> {
-    let value = envmnt::get_or(name, "");
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
-}
-
 fn parse_string_dict(s: impl AsRef<str>) -> anyhow::Result<HashMap<ClientAETitle, String>> {
     s.as_ref()
         .split(',')
