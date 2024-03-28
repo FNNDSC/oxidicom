@@ -71,6 +71,7 @@ async fn assertions(expected_counts: &[usize]) {
             .unwrap()
             .expect("\"Oxidicom Custom Metadata\" file for OxidicomAttemptedPushCount not found. It should be registered after the last DICOM file was pushed.")
             .object;
+        assert_eq!(custom_file_num_attempts.series_description, Some(expected_count.to_string()))
     }
 }
 
