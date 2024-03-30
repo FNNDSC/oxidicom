@@ -24,22 +24,40 @@
   "panels": [
     {
       "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
+        "type": "quickwit-quickwit-datasource",
+        "uid": "PA291FB16905E2BD2"
       },
       "description": "",
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
+            "fillOpacity": 80,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "scaleDistribution": {
-              "type": "linear"
-            }
-          }
+            "lineWidth": 1
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ms"
         },
         "overrides": []
       },
@@ -51,79 +69,52 @@
       },
       "id": 10,
       "options": {
-        "calculate": true,
-        "cellGap": 1,
-        "color": {
-          "exponent": 0.5,
-          "fill": "dark-orange",
-          "mode": "scheme",
-          "reverse": false,
-          "scale": "exponential",
-          "scheme": "Oranges",
-          "steps": 8
-        },
-        "exemplars": {
-          "color": "rgba(255,0,255,0.7)"
-        },
-        "filterValues": {
-          "le": 1e-9
-        },
         "legend": {
-          "show": true
-        },
-        "rowsFrame": {
-          "layout": "auto"
-        },
-        "tooltip": {
-          "mode": "single",
-          "showColorScale": false,
-          "yHistogram": false
-        },
-        "yAxis": {
-          "axisPlacement": "left",
-          "reverse": false
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
         }
       },
       "pluginVersion": "10.4.0",
       "targets": [
         {
+          "alias": "",
+          "bucketAggs": [],
           "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
+            "type": "quickwit-quickwit-datasource",
+            "uid": "PA291FB16905E2BD2"
           },
-          "filters": [
+          "metrics": [
             {
-              "id": "a3ab68a4",
-              "operator": "=",
-              "scope": "span"
-            },
-            {
-              "id": "service-name",
-              "operator": "=",
-              "scope": "resource",
-              "tag": "service.name",
-              "value": [
-                "\"oxidicom\""
-              ]
-            },
-            {
-              "id": "span-name",
-              "operator": "=",
-              "scope": "span",
-              "tag": "name",
-              "value": [
-                "\"push_to_chris\""
-              ]
+              "id": "1",
+              "settings": {
+                "limit": "10000",
+                "sortDirection": "desc"
+              },
+              "type": "logs"
             }
           ],
-          "limit": 20,
-          "queryType": "traceqlSearch",
+          "query": "service_name:oxidicom AND span_name:push_to_chris",
           "refId": "A",
-          "tableType": "traces"
+          "timeField": ""
         }
       ],
-      "title": "CUBE Response Timing Heatmap",
-      "type": "heatmap"
+      "title": "CUBE PACSFIle Registration Timing",
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "span_duration_millis",
+                "resource_attributes.k8s.pod.start_time"
+              ]
+            }
+          }
+        }
+      ],
+      "type": "histogram"
     },
     {
       "datasource": {
@@ -239,7 +230,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "container_memory_working_set_bytes{namespace=\"$namespace\", container!=\"\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"oxidicom\", namespace=\"kk\"}",
+          "expr": "container_memory_working_set_bytes{namespace=\"$namespace\", container!=\"\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"oxidicom\", namespace=\"$namespace\"}",
           "instant": false,
           "legendFormat": "{{pod}}",
           "range": true,
@@ -251,7 +242,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "max(kube_pod_container_resource_limits{job=\"kube-state-metrics\", namespace=\"$namespace\", resource=\"memory\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"oxidicom\", namespace=\"kk\"})",
+          "expr": "max(kube_pod_container_resource_limits{job=\"kube-state-metrics\", namespace=\"$namespace\", resource=\"memory\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"oxidicom\", namespace=\"$namespace\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "Memory Limit",
@@ -375,7 +366,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate{namespace=\"$namespace\", container!=\"\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"oxidicom\", namespace=\"kk\"}",
+          "expr": "node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate{namespace=\"$namespace\", container!=\"\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"oxidicom\", namespace=\"$namespace\"}",
           "instant": false,
           "legendFormat": "{{pod}}",
           "range": true,
@@ -387,7 +378,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "max(kube_pod_container_resource_limits{job=\"kube-state-metrics\", namespace=\"$namespace\", resource=\"cpu\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"oxidicom\", namespace=\"kk\"})",
+          "expr": "max(kube_pod_container_resource_limits{job=\"kube-state-metrics\", namespace=\"$namespace\", resource=\"cpu\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"oxidicom\", namespace=\"$namespace\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "CPU Limit",
@@ -511,7 +502,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate{namespace=\"$namespace\", container!=\"\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"chris-server\", namespace=\"kk\"}",
+          "expr": "node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate{namespace=\"$namespace\", container!=\"\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"chris-server\", namespace=\"$namespace\"}",
           "instant": false,
           "legendFormat": "{{pod}}",
           "range": true,
@@ -523,7 +514,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "max(kube_pod_container_resource_limits{job=\"kube-state-metrics\", namespace=\"$namespace\", resource=\"cpu\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"chris-server\", namespace=\"kk\"})",
+          "expr": "max(kube_pod_container_resource_limits{job=\"kube-state-metrics\", namespace=\"$namespace\", resource=\"cpu\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"chris-server\", namespace=\"$namespace\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "CPU Limit",
@@ -648,7 +639,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "container_memory_working_set_bytes{namespace=\"kk\", container!=\"\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"chris-server\", namespace=\"$namespace\"}",
+          "expr": "container_memory_working_set_bytes{namespace=\"$namespace\", container!=\"\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"chris-server\", namespace=\"$namespace\"}",
           "instant": false,
           "legendFormat": "{{pod}}",
           "range": true,
@@ -660,7 +651,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "max(kube_pod_container_resource_limits{job=\"kube-state-metrics\", namespace=\"$namespace\", resource=\"memory\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"chris-server\", namespace=\"kk\"})",
+          "expr": "max(kube_pod_container_resource_limits{job=\"kube-state-metrics\", namespace=\"$namespace\", resource=\"memory\"}\n* on (pod) group_left()\nkube_pod_labels{label_app_kubernetes_io_name=\"chris-server\", namespace=\"$namespace\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "Memory Limit",
@@ -1063,7 +1054,7 @@
       "type": "table"
     }
   ],
-  "refresh": "5s",
+  "refresh": "",
   "schemaVersion": 39,
   "tags": [
     "ChRIS"
@@ -1072,7 +1063,7 @@
     "list": [
       {
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "kk",
           "value": "kk"
         },
@@ -1139,13 +1130,13 @@
     ]
   },
   "time": {
-    "from": "now-12h",
-    "to": "now"
+    "from": "2024-03-28T06:39:09.559Z",
+    "to": "2024-03-28T06:41:02.157Z"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "ChRIS PACS Retrieval Performance",
   "uid": "cdgslo52g3474b",
-  "version": 11,
+  "version": 2,
   "weekStart": ""
 }
