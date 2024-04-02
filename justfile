@@ -1,9 +1,9 @@
 # Run integration tests
-test: orthanc
+test: reset
     ./run.sh cargo test
 
 # Run in debug mode
-run: orthanc
+run:
     ./run.sh cargo run
 
 # Stop the run server
@@ -14,12 +14,8 @@ kill:
 reset:
     ./reset.sh
 
-# Start Orthanc and download sample data, if necessary
-orthanc: orthanc-up
-    ./get_data.sh
-
 # Start Orthanc
-orthanc-up:
+orthanc:
     docker compose up -d
 
 # Start an observability stack for distributed tracing

@@ -28,8 +28,10 @@ jobs:
     - uses: taiki-e/install-action@v2
       with:
         tool: just
-    - name: Start Orthanc and download example data
-      run: just orthanc
+    - name: Start Orthanc
+      run: docker compose up -d orthanc
+    - name: Download example data
+      run: docker compose up get-data
     - name: Integration test
       run: just test
   build:

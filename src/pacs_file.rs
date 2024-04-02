@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{name_of, MissingRequiredTag};
 use crate::patient_age::parse_age;
-use crate::sanitize::sanitize;
+use crate::sanitize::sanitize_path;
 
 /// POST request body to CUBE `api/v1/pacsfiles/`
 #[derive(Serialize, Clone)]
@@ -103,22 +103,22 @@ impl PacsFileRegistrationRequest {
         // https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/bin/px-push#L175-L195
         let path = format!(
             "SERVICES/PACS/{}/{}-{}-{}/{}-{}-{}/{:0>5}-{}-{}/{:0>4}-{}.dcm",
-            &pacs_name,
+            sanitize_path(&pacs_name),
             // Patient
-            PatientID.as_str(),
-            PatientName.as_deref().unwrap_or(""),
-            PatientBirthDate.as_deref().unwrap_or(""),
+            sanitize_path(PatientID.as_str()),
+            sanitize_path(PatientName.as_deref().unwrap_or("")),
+            sanitize_path(PatientBirthDate.as_deref().unwrap_or("")),
             // Study
-            StudyDescription.as_deref().unwrap_or("StudyDescription"),
-            AccessionNumber.as_deref().unwrap_or("AccessionNumber"),
-            StudyDate.as_str(),
+            sanitize_path(StudyDescription.as_deref().unwrap_or("StudyDescription")),
+            sanitize_path(AccessionNumber.as_deref().unwrap_or("AccessionNumber")),
+            sanitize_path(StudyDate.as_str()),
             // Series
             SeriesNumber.unwrap_or_else(|| MaybeU32::String("SeriesNumber".to_string())),
-            SeriesDescription.as_deref().unwrap_or("SeriesDescription"),
+            sanitize_path(SeriesDescription.as_deref().unwrap_or("SeriesDescription")),
             &hash(SeriesInstanceUID.as_str())[..7],
             // Instance
             InstanceNumber.unwrap_or_else(|| MaybeU32::String("InstanceNumber".to_string())),
-            SOPInstanceUID
+            sanitize_path(SOPInstanceUID)
         );
 
         let pacs_file = Self {
@@ -147,9 +147,9 @@ fn ttr(dcm: &DefaultDicomObject, tag: Tag) -> Result<String, MissingRequiredTag>
     tts(dcm, tag).ok_or_else(|| MissingRequiredTag(tag))
 }
 
-/// Optional string tag
+/// Optional string tag (with null bytes removed)
 fn tts(dcm: &DefaultDicomObject, tag: Tag) -> Option<String> {
-    tt(dcm, tag).map(|s| sanitize(s))
+    tt(dcm, tag).map(|s| s.replace('\0', ""))
 }
 
 /// Try to get the trimmed string value of a DICOM object.

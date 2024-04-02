@@ -12,6 +12,23 @@ services:
       - "8042:8042"
     networks:
       test-oxidicom:
+  get-data:
+    build:
+      dockerfile_inline: |
+        FROM docker.io/library/alpine:latest
+        RUN apk add parallel curl jq bash
+    command: /get_data.sh
+    tty: true
+    attach: true
+    volumes:
+      - ./get_data.sh:/get_data.sh:ro
+    depends_on:
+      orthanc:
+        condition: service_started
+    networks:
+      test-oxidicom:
+    profiles:
+      - oxidicom
   oxidicom:
     image: docker.io/library/rust:1.76-bookworm
     user: 1001:0
@@ -40,8 +57,12 @@ services:
       CARGO_HOME: /cargo
       RUST_BACKTRACE: full
     depends_on:
-      - rust-target-dir-permissions
-      - orthanc
+      orthanc:
+        condition: service_started
+      rust-target-dir-permissions:
+        condition: service_completed_successfully
+      get-data:
+        condition: service_completed_successfully
     profiles:
       - oxidicom
     networks:
