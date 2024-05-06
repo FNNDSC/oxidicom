@@ -1,4 +1,5 @@
 mod association_error;
+mod chrisdb_client;
 mod cube_client;
 mod cube_sender;
 mod custom_metadata;
