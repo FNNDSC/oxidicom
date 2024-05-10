@@ -1,4 +1,4 @@
-FROM docker.io/lukemathwalker/cargo-chef:0.1.66-rust-1.76-alpine3.18 AS chef
+FROM docker.io/lukemathwalker/cargo-chef:0.1.66-rust-1.78-alpine3.18 AS chef
 WORKDIR /app
 ARG CARGO_TERM_COLOR=always
 

@@ -30,7 +30,7 @@ services:
     profiles:
       - oxidicom
   oxidicom:
-    image: docker.io/library/rust:1.76-bookworm
+    image: docker.io/library/rust:1.78-bookworm
     user: 1001:0
     group_add:
       - ${GID-0}
@@ -69,7 +69,7 @@ services:
       minichris-local:
       test-oxidicom:
   rust-target-dir-permissions:
-    image: docker.io/library/rust:1.76-bookworm
+    image: docker.io/library/rust:1.78-bookworm
     volumes: *RUST_VOLUMES
     command: chmod g+rwx /target /cargo
     profiles:
