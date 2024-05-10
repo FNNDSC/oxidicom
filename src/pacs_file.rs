@@ -9,7 +9,6 @@
 //! https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/pypx/register.py#L459-L465
 #![allow(non_snake_case)]
 
-use std::borrow::Cow;
 use std::fmt::Display;
 
 use crate::dicomrs_options::ClientAETitle;
@@ -179,14 +178,10 @@ impl From<&str> for MaybeU32 {
 
 impl Display for MaybeU32 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                MaybeU32::U32(i) => Cow::Owned(i.to_string()),
-                MaybeU32::String(s) => Cow::Borrowed(s),
-            }
-        )
+        match self {
+            MaybeU32::U32(i) => i.fmt(f),
+            MaybeU32::String(s) => s.fmt(f),
+        }
     }
 }
 
