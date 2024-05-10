@@ -29,7 +29,6 @@ impl CubePostgresClient {
         &mut self,
         files: &[PacsFileRegistrationRequest],
     ) -> Result<u64, postgres::Error> {
-        // TODO remove duplicates in a transaction
         todo!()
     }
 
@@ -118,7 +117,8 @@ impl<'a> PacsfileRegistrationTransaction<'a> {
     }
 }
 
-fn statement_for(len: NonZeroUsize) -> String {
+/// Create a SQL prepared statement with `len` parameters.
+fn prepared_statement_for(statement: &str, len: NonZeroUsize) -> String {
     let tuples = (0..len.get())
         .map(|n| {
             let start = n * TUPLE_LENGTH + 1;
@@ -127,7 +127,25 @@ fn statement_for(len: NonZeroUsize) -> String {
             format!("({placeholders})")
         })
         .join(" ");
-    format!("{INSERT_STATEMENT} {tuples}")
+    format!("{statement} {tuples}")
+}
+
+/// Query the database for fnames which may already exist.
+fn query_for_existing<'a>(
+    transaction: postgres::Transaction<'a>,
+    files: &'a [PacsFileRegistrationRequest],
+) -> Result<Vec<String>, postgres::Error> {
+    if let Some(n_files) = NonZeroUsize::new(files.len()) {
+        let statement = prepared_statement_for(
+            "SELECT fname FROM pacsfile_pacsfile WHERE fname IN",
+            n_files,
+        );
+        let fnames: Vec<_> = files.iter().map(|f| f.path.as_str()).collect();
+        let res = transaction.query(&statement, fnames.as_slice())?;
+        todo!()
+    } else {
+        Ok(Vec::with_capacity(0))
+    }
 }
 
 #[cfg(test)]
@@ -141,7 +159,7 @@ mod tests {
             INSERT_STATEMENT,
             (1..=16).map(|i| format!("${i}")).join(",")
         );
-        let actual1 = statement_for(NonZeroUsize::new(1).unwrap());
+        let actual1 = prepared_statement_for(INSERT_STATEMENT, NonZeroUsize::new(1).unwrap());
         assert_eq!(actual1, expected1);
     }
 
@@ -154,7 +172,7 @@ mod tests {
             (17..=32).map(|i| format!("${i}")).join(","),
             (33..=48).map(|i| format!("${i}")).join(","),
         );
-        let actual1 = statement_for(NonZeroUsize::new(3).unwrap());
+        let actual1 = prepared_statement_for(INSERT_STATEMENT, NonZeroUsize::new(3).unwrap());
         assert_eq!(actual1, expected1);
     }
 }

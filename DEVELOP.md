@@ -1,3 +1,9 @@
+## Cheatsheet
+
+```shell
+docker exec -it minichris-docker-db-1 psql postgresql://chris:chris1234@localhost:5432/chris
+```
+
 ## PostgreSQL Tables
 
 ### pacsfiles_pacs
