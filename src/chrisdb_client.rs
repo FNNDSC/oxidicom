@@ -1,128 +1,192 @@
-use crate::dicomrs_options::ClientAETitle;
-use crate::pacs_file::PacsFileRegistrationRequest;
-use itertools::Itertools;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
-use time::OffsetDateTime;
+
+use itertools::Itertools;
+use opentelemetry::trace::TraceContextExt;
+use opentelemetry::{Array, Context, KeyValue, StringValue, Value};
+use sqlx::types::time::{OffsetDateTime, UtcOffset};
+
+use crate::pacs_file::PacsFileRegistrationRequest;
 
 /// A client which writes to The _ChRIS_ backend's PostgreSQL database.
 pub(crate) struct CubePostgresClient {
     /// PostgreSQL database client
-    client: postgres::Client,
+    pool: sqlx::PgPool,
     /// The pacsfiles_pacs table, which maps string PACS names to integer IDs
     pacs: HashMap<String, u32>,
     /// Timezone for the "creation_date" field.
-    tz: Option<time::UtcOffset>,
+    tz: Option<UtcOffset>,
+}
+
+/// Error registering PACS files to the database.
+#[derive(thiserror::Error, Debug)]
+pub enum PacsFileDatabaseError {
+    #[error("Wrong number of rows were affected. Tried to register {count} files, however {rows_affected} rows affected.")]
+    WrongNumberOfAffectedRows {
+        /// Number of files which need to be registered
+        count: NonZeroUsize,
+        /// Number of rows affected by execution of SQL INSERT statement
+        rows_affected: u64,
+    },
+    #[error(transparent)]
+    SqlxError(#[from] sqlx::Error)
 }
 
 impl CubePostgresClient {
-    pub fn new(client: postgres::Client, tz: Option<time::UtcOffset>) -> Self {
+    /// Constructor
+    pub fn new(pool: sqlx::PgPool, tz: Option<UtcOffset>) -> Self {
         Self {
-            client,
+            pool,
             pacs: Default::default(),
             tz,
         }
     }
 
-    /// Register DICOM file metadata to CUBE's database.
-    pub fn register(
+    /// Register DICOM file metadata to CUBE's database. Any files which already exist
+    /// in the database will not be registered again.
+    ///
+    /// The SQL transaction will be committed if-*and-only-if* the INSERT is successful
+    /// and the number of rows affected is expected.
+    pub async fn register(
         &mut self,
         files: &[PacsFileRegistrationRequest],
-    ) -> Result<u64, postgres::Error> {
-        todo!()
+    ) -> Result<(), PacsFileDatabaseError> {
+        let mut transaction = self.pool.begin().await?;
+        let unregistered_files =
+            warn_and_remove_already_registered(&mut transaction, files).await?;
+        if let Some((count, rows_affected)) = insert_into_pacsfile(&mut transaction, unregistered_files, self.get_now()).await? {
+            if count.get() as u64 == rows_affected {
+                transaction.commit().await.map_err(PacsFileDatabaseError::from)
+            } else {
+                Err(PacsFileDatabaseError::WrongNumberOfAffectedRows { count, rows_affected })
+            }
+        } else {
+            Ok(())
+        }
     }
 
-    fn get_now(&self) -> time::OffsetDateTime {
-        let now = time::OffsetDateTime::now_utc();
-        if let Some(offset) = self.tz {
-            now.checked_to_offset(offset).unwrap_or(now)
+    /// Get the current time in the local timezone.
+    fn get_now(&self) -> OffsetDateTime {
+        let now = OffsetDateTime::now_utc();
+        if let Some(tz) = self.tz {
+            now.checked_to_offset(tz).unwrap_or(now)
         } else {
             now
         }
     }
 }
 
-const INSERT_STATEMENT: &str = r#"INSERT INTO pacsfiles_pacsfile (
+const PACSFILE_INSERT_STATEMENT: &str = r#"INSERT INTO pacsfiles_pacsfile (
 creation_date, fname, "PatientID", "PatientName", "StudyInstanceUID", "StudyDescription",
 "SeriesInstanceUID", "SeriesDescription", pacs_id, "PatientAge", "PatientBirthDate",
 "PatientSex", "Modality", "ProtocolName", "StudyDate", "AccessionNumber") VALUES"#;
-const TUPLE_LENGTH: usize = 16;
+const PACSFILE_INSERT_TUPLE_LENGTH: NonZeroUsize = match NonZeroUsize::new(16) {
+    // https://ao.owo.si/questions/66838439/how-can-i-safely-initialise-a-constant-of-type-nonzerou8
+    Some(n) => n,
+    None => [][0],
+};
 
-struct PacsfileRegistrationTransaction<'a> {
-    transaction: postgres::Transaction<'a>,
-    pacs_id_statement: postgres::Statement,
+/// Execute the SQL `INSERT INTO pacsfiles_pacsfile ...` command, which registers files to CUBE's
+/// database.
+///
+/// Does nothing if `files` is empty.
+///
+/// Returns the number of files, and the number of rows affected. Pro-tip: if these two values
+/// are not equal, something is seriously wrong.
+async fn insert_into_pacsfile<'a>(
+    transaction: &mut sqlx::Transaction<'a, sqlx::Postgres>,
+    files: Vec<&'a PacsFileRegistrationRequest>,
+    creation_date: OffsetDateTime,
+) -> Result<Option<(NonZeroUsize, u64)>, sqlx::Error> {
+    if let Some(count) = NonZeroUsize::new(files.len()) {
+        let statement = prepared_statement_for(
+            PACSFILE_INSERT_STATEMENT,
+            PACSFILE_INSERT_TUPLE_LENGTH,
+            count,
+        );
+        let query = files.iter().fold(
+            sqlx::query(&statement),
+            |query, file| {
+                // N.B. order must exactly match PACSFILE_INSERT_STATEMENT
+                query
+                    .bind(creation_date)
+                    .bind(&file.path)
+                    .bind(&file.PatientID)
+                    .bind(file.PatientName.as_ref())
+                    .bind(&file.StudyInstanceUID)
+                    .bind(file.StudyDescription.as_ref())
+                    .bind(&file.SeriesInstanceUID)
+                    .bind(file.SeriesDescription.as_ref())
+                    .bind(file.pacs_name.as_str())
+                    .bind(file.PatientName.as_ref())
+                    .bind(file.PatientBirthDate.as_ref())
+                    .bind(file.PatientSex.as_ref())
+                    .bind(file.Modality.as_ref())
+                    .bind(file.ProtocolName.as_ref())
+                    .bind(&file.StudyDate)
+                    .bind(file.AccessionNumber.as_ref())
+            }
+        );
+        let result = query.execute(&mut **transaction).await?;
+        Ok(Some((count, result.rows_affected())))
+    } else {
+        Ok(None)
+    }
 }
 
-impl<'a> PacsfileRegistrationTransaction<'a> {
-    fn new(client: &'a mut postgres::Client) -> Result<Self, postgres::Error> {
-        let mut transaction = client.transaction()?;
-        let pacs_id_statement =
-            transaction.prepare("SELECT id FROM pacsfiles_pacs WHERE identifier = $1")?;
-        Ok(Self {
-            transaction,
-            pacs_id_statement,
-        })
-    }
+/// Outcome of attempting to register files to the database.
+///
+/// Pro-tip: if `new_files_count != rows_affected`, something is seriously broken!
+pub(crate) struct InsertionOutcome {
+    /// Number of new files registered to the database
+    count: NonZeroUsize,
+    /// Number of database rows affected
+    rows_affected: u64,
+}
 
-    fn remove_duplicates<'b>(
-        &'a self,
-        files: &'b [PacsFileRegistrationRequest],
-    ) -> Result<Vec<&'b PacsFileRegistrationRequest>, postgres::Error> {
-        todo!()
-    }
+/// Query the database to check whether any of the files are already registered.
+/// If so, show a warning about it, and exclude that file from the return value.
+async fn warn_and_remove_already_registered<'a>(
+    transaction: &mut sqlx::Transaction<'a, sqlx::Postgres>,
+    files: &'a [PacsFileRegistrationRequest],
+) -> Result<Vec<&'a PacsFileRegistrationRequest>, sqlx::Error> {
+    let currently_registered = query_for_existing(transaction, files).await?;
+    let already_registered_paths: Vec<_> = files
+        .iter()
+        .filter(|file| currently_registered.contains(&file.path))
+        .map(|file| file.path.as_str())
+        .collect();
+    let unregistered_files = files
+        .iter()
+        .filter(|file| !already_registered_paths.contains(&file.path.as_str()))
+        .collect();
+    report_already_registered_files_via_opentelemetry(&already_registered_paths).await;
+    Ok(unregistered_files)
+}
 
-    fn prepare_params<'b>(
-        &'a mut self,
-        creation_date: OffsetDateTime,
-        files: &'b [PacsFileRegistrationRequest],
-    ) -> Result<Vec<Box<dyn postgres::types::ToSql + Sync + 'b>>, postgres::Error> {
-        let mut params: Vec<Box<dyn postgres::types::ToSql + Sync>> =
-            Vec::with_capacity(files.len() * TUPLE_LENGTH);
-        for file in files {
-            // order must be as specified in INSERT_STATEMENT
-            params.push(Box::new(creation_date));
-            params.push(Box::new(&file.path)); // fname
-            params.push(Box::new(&file.PatientID));
-            params.push(Box::new(&file.PatientName));
-            params.push(Box::new(&file.StudyInstanceUID));
-            params.push(Box::new(&file.StudyDescription));
-            params.push(Box::new(&file.SeriesInstanceUID));
-            params.push(Box::new(&file.SeriesDescription));
-            params.push(Box::new(self.get_pacs_id_of(&file.pacs_name)?));
-            params.push(Box::new(&file.PatientAge));
-            params.push(Box::new(&file.PatientBirthDate));
-            params.push(Box::new(&file.PatientSex));
-            params.push(Box::new(&file.Modality));
-            params.push(Box::new(&file.ProtocolName));
-            params.push(Box::new(&file.StudyDate));
-            params.push(Box::new(&file.AccessionNumber));
-        }
-        Ok(params)
+/// If given a non-empty array of paths, report it to OpenTelemetry as a string array.
+async fn report_already_registered_files_via_opentelemetry(already_registered_files: &[&str]) {
+    if already_registered_files.is_empty() {
+        return;
     }
-
-    fn get_pacs_id_of(&mut self, aec: &ClientAETitle) -> Result<u32, postgres::Error> {
-        let res = self
-            .transaction
-            .query_opt(&self.pacs_id_statement, &[&aec.as_str()])?;
-        if let Some(row) = res {
-            return Ok(row.get(0));
-        }
-        self.transaction.execute(
-            "INSERT INTO pacsfiles_pacs (identifier) VALUES ($1)",
-            &[&aec.as_str()],
-        )?;
-        self.transaction
-            .query_one(&self.pacs_id_statement, &[&aec.as_str()])
-            .map(|row| row.get(0))
-    }
+    let string_values: Vec<_> = already_registered_files
+        .iter()
+        .map(|s| s.to_string())
+        .map(StringValue::from)
+        .collect();
+    let value = Value::Array(Array::String(string_values));
+    let context = Context::current();
+    context
+        .span()
+        .set_attribute(KeyValue::new("already_registered_paths", value))
 }
 
 /// Create a SQL prepared statement with `len` parameters.
-fn prepared_statement_for(statement: &str, len: NonZeroUsize) -> String {
+fn prepared_statement_for(statement: &str, tuple_len: NonZeroUsize, len: NonZeroUsize) -> String {
     let tuples = (0..len.get())
         .map(|n| {
-            let start = n * TUPLE_LENGTH + 1;
-            let end = start + TUPLE_LENGTH;
+            let start = n * tuple_len.get() + 1;
+            let end = start + tuple_len.get();
             let placeholders = (start..end).map(|i| format!("${i}")).join(",");
             format!("({placeholders})")
         })
@@ -131,18 +195,20 @@ fn prepared_statement_for(statement: &str, len: NonZeroUsize) -> String {
 }
 
 /// Query the database for fnames which may already exist.
-fn query_for_existing<'a>(
-    transaction: postgres::Transaction<'a>,
-    files: &'a [PacsFileRegistrationRequest],
-) -> Result<Vec<String>, postgres::Error> {
+async fn query_for_existing(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    files: &[PacsFileRegistrationRequest],
+) -> Result<Vec<String>, sqlx::Error> {
     if let Some(n_files) = NonZeroUsize::new(files.len()) {
         let statement = prepared_statement_for(
             "SELECT fname FROM pacsfile_pacsfile WHERE fname IN",
             n_files,
+            n_files,
         );
-        let fnames: Vec<_> = files.iter().map(|f| f.path.as_str()).collect();
-        let res = transaction.query(&statement, fnames.as_slice())?;
-        todo!()
+        let query = files.iter().fold(sqlx::query_scalar(&statement), |q, f| {
+            q.bind::<&str>(f.path.as_str())
+        });
+        query.fetch_all(&mut **transaction).await
     } else {
         Ok(Vec::with_capacity(0))
     }
@@ -156,10 +222,14 @@ mod tests {
     fn test_statement_for1() {
         let expected1 = format!(
             "{} ({})",
-            INSERT_STATEMENT,
+            PACSFILE_INSERT_STATEMENT,
             (1..=16).map(|i| format!("${i}")).join(",")
         );
-        let actual1 = prepared_statement_for(INSERT_STATEMENT, NonZeroUsize::new(1).unwrap());
+        let actual1 = prepared_statement_for(
+            PACSFILE_INSERT_STATEMENT,
+            PACSFILE_INSERT_TUPLE_LENGTH,
+            NonZeroUsize::new(1).unwrap(),
+        );
         assert_eq!(actual1, expected1);
     }
 
@@ -167,12 +237,16 @@ mod tests {
     fn test_statement_for3() {
         let expected1 = format!(
             "{} ({}) ({}) ({})",
-            INSERT_STATEMENT,
+            PACSFILE_INSERT_STATEMENT,
             (1..=16).map(|i| format!("${i}")).join(","),
             (17..=32).map(|i| format!("${i}")).join(","),
             (33..=48).map(|i| format!("${i}")).join(","),
         );
-        let actual1 = prepared_statement_for(INSERT_STATEMENT, NonZeroUsize::new(3).unwrap());
+        let actual1 = prepared_statement_for(
+            PACSFILE_INSERT_STATEMENT,
+            PACSFILE_INSERT_TUPLE_LENGTH,
+            NonZeroUsize::new(3).unwrap(),
+        );
         assert_eq!(actual1, expected1);
     }
 }
