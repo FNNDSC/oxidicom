@@ -56,6 +56,9 @@ services:
       CARGO_TARGET_DIR: /target
       CARGO_HOME: /cargo
       RUST_BACKTRACE: full
+      # DATABASE_URL must be set for the sqlx crate to validate queries at compile time.
+      # see https://docs.rs/sqlx/latest/sqlx/macro.query.html#requirements
+      DATABASE_URL: "postgresql://chris:chris1234@db:5432/chris"
     depends_on:
       orthanc:
         condition: service_started

@@ -69,6 +69,10 @@ jobs:
               for k, v in outputs.items():
                   out.write(f'{k}={v}\n')
       - uses: docker/setup-buildx-action@v3
+        with:
+          # builder needs to be able to see the Postgres database running in the minichris-local network,
+          # so that the sqlx crate can do compile-time verification of SQL commands.
+          driver-opts: network=minichris-local
       - name: Login to DockerHub
         if: github.event_name == 'push' || github.event_name == 'release'
         id: dockerhub_login
