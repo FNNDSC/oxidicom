@@ -13,7 +13,7 @@ use uuid::Uuid;
 pub struct SeriesKeySet {
     pub dir_path: String,
     pub PatientID: String,
-    pub StudyDate: String,
+    pub StudyDate: time::Date,
     pub StudyInstanceUID: String,
     pub SeriesInstanceUID: String,
     pub pacs_name: ClientAETitle,

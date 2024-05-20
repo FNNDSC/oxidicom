@@ -9,47 +9,42 @@
 //! https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/pypx/register.py#L459-L465
 #![allow(non_snake_case)]
 
+use std::cell::OnceCell;
 use std::fmt::Display;
 
 use crate::dicomrs_options::ClientAETitle;
 use dicom::dictionary_std::tags;
 use dicom::object::{DefaultDicomObject, Tag};
-use serde::{Deserialize, Serialize};
 
-use crate::error::{name_of, MissingRequiredTag};
+use crate::error::{name_of, RequiredTagError};
 use crate::patient_age::parse_age;
 use crate::sanitize::sanitize_path;
 
-/// POST request body to CUBE `api/v1/pacsfiles/`
-#[derive(Serialize, Clone)]
+/// Data necessary to register a DICOM file to CUBE's database in the `pacsfiles_pacsfile` table.
+///
+/// Historically, this struct represented the JSON payload to `POST api/v1/pacs/`. However,
+/// we register files directly to the database instead of via CUBE for performance reasons.
+#[derive(Debug, Clone)]
 pub struct PacsFileRegistrationRequest {
     pub path: String,
     pub PatientID: String,
-    pub StudyDate: String,
+    pub StudyDate: time::Date,
     pub StudyInstanceUID: String,
     pub SeriesInstanceUID: String,
     pub pacs_name: ClientAETitle,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub PatientName: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub PatientBirthDate: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub PatientAge: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    pub PatientAge: Option<i32>, // i32 because PostgreSQL
     pub PatientSex: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub AccessionNumber: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub Modality: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub ProtocolName: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub StudyDescription: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub SeriesDescription: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct BadTag {
     pub tag: Tag,
     pub value: Option<String>,
@@ -65,14 +60,21 @@ impl PacsFileRegistrationRequest {
     pub fn new(
         pacs_name: ClientAETitle,
         dcm: &DefaultDicomObject,
-    ) -> Result<(Self, Vec<BadTag>), MissingRequiredTag> {
+    ) -> Result<(Self, Vec<BadTag>), RequiredTagError> {
         let mut bad_tags = vec![];
         // required fields
         let StudyInstanceUID = ttr(dcm, tags::STUDY_INSTANCE_UID)?;
         let SeriesInstanceUID = ttr(dcm, tags::SERIES_INSTANCE_UID)?;
         let SOPInstanceUID = ttr(dcm, tags::SOP_INSTANCE_UID)?;
         let PatientID = ttr(dcm, tags::PATIENT_ID)?;
-        let StudyDate = ttr(dcm, tags::STUDY_DATE)?; // required by CUBE
+        let StudyDate_string = ttr(dcm, tags::STUDY_DATE)?; // required by CUBE
+        let StudyDate_format = time::macros::format_description!("[year][month][day]"); // DICOM DA format
+        let StudyDate = time::Date::parse(&StudyDate_string, &StudyDate_format).map_err(|_| {
+            RequiredTagError::Bad(BadTag {
+                tag: tags::STUDY_DATE,
+                value: Some(StudyDate_string.to_string()),
+            })
+        })?;
 
         // optional values
         let PatientName = tts(dcm, tags::PATIENT_NAME);
@@ -110,7 +112,7 @@ impl PacsFileRegistrationRequest {
             // Study
             sanitize_path(StudyDescription.as_deref().unwrap_or("StudyDescription")),
             sanitize_path(AccessionNumber.as_deref().unwrap_or("AccessionNumber")),
-            sanitize_path(StudyDate.as_str()),
+            sanitize_path(StudyDate_string.as_str()),
             // Series
             SeriesNumber.unwrap_or_else(|| MaybeU32::String("SeriesNumber".to_string())),
             sanitize_path(SeriesDescription.as_deref().unwrap_or("SeriesDescription")),
@@ -142,8 +144,8 @@ impl PacsFileRegistrationRequest {
 }
 
 /// Required string tag
-fn ttr(dcm: &DefaultDicomObject, tag: Tag) -> Result<String, MissingRequiredTag> {
-    tts(dcm, tag).ok_or_else(|| MissingRequiredTag(tag))
+fn ttr(dcm: &DefaultDicomObject, tag: Tag) -> Result<String, RequiredTagError> {
+    tts(dcm, tag).ok_or_else(|| RequiredTagError::Missing(tag))
 }
 
 /// Optional string tag (with null bytes removed)
@@ -160,7 +162,7 @@ pub(crate) fn tt(dcm: &DefaultDicomObject, tag: Tag) -> Option<&str> {
 }
 
 /// Something that is maybe a [u32], but in case it's not valid, is a [String].
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum MaybeU32 {
     U32(u32),
@@ -190,7 +192,7 @@ fn hash(data: &str) -> String {
     format!("{:x}", seahash::hash(data.as_bytes()))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct PacsFileResponse {
     pub url: String,
     pub id: u32,

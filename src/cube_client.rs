@@ -6,7 +6,7 @@ use opentelemetry::{Context, KeyValue};
 use reqwest::StatusCode;
 use std::time::Duration;
 
-use crate::error::{check, ChrisPacsError, MissingRequiredTag, RequestError};
+use crate::error::{check, ChrisPacsError, RequestError, RequiredTagError};
 use crate::pacs_file::{BadTag, PacsFileRegistrationRequest, PacsFileResponse};
 
 pub struct CubePacsStorageClient {
@@ -102,15 +102,7 @@ impl CubePacsStorageClient {
         &self,
         file: &PacsFileRegistrationRequest,
     ) -> Result<PacsFileResponse, RequestError> {
-        let res = self
-            .client
-            .post(&self.url)
-            .basic_auth(&self.username, Some(&self.password))
-            .header(reqwest::header::ACCEPT, "application/json")
-            .json(file)
-            .send()?;
-        let data = check(res)?.json()?;
-        return Ok(data);
+        todo!()
     }
 }
 
@@ -126,7 +118,7 @@ impl PacsFileRegistration {
     pub(crate) fn new(
         pacs_name: ClientAETitle,
         obj: DefaultDicomObject,
-    ) -> Result<(Self, Vec<BadTag>), (MissingRequiredTag, DefaultDicomObject)> {
+    ) -> Result<(Self, Vec<BadTag>), (RequiredTagError, DefaultDicomObject)> {
         match PacsFileRegistrationRequest::new(pacs_name, &obj) {
             Ok((request, bad_tags)) => Ok((Self { request, obj }, bad_tags)),
             Err(e) => Err((e, obj)),

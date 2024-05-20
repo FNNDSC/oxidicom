@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::num::NonZeroUsize;
+use std::collections::{HashMap, HashSet};
 
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry::{Array, Context, KeyValue, StringValue, Value};
+use sqlx::postgres::PgQueryResult;
 use sqlx::types::time::{OffsetDateTime, UtcOffset};
 
 use crate::pacs_file::PacsFileRegistrationRequest;
@@ -23,7 +23,7 @@ pub enum PacsFileDatabaseError {
     #[error("Wrong number of rows were affected. Tried to register {count} files, however {rows_affected} rows affected.")]
     WrongNumberOfAffectedRows {
         /// Number of files which need to be registered
-        count: NonZeroUsize,
+        count: u64,
         /// Number of rows affected by execution of SQL INSERT statement
         rows_affected: u64,
     },
@@ -47,28 +47,24 @@ impl CubePostgresClient {
     /// The SQL transaction will be committed if-*and-only-if* the INSERT is successful
     /// and the number of rows affected is expected.
     pub async fn register(
-        &mut self,
+        &self,
         files: &[PacsFileRegistrationRequest],
     ) -> Result<(), PacsFileDatabaseError> {
         let mut transaction = self.pool.begin().await?;
         let unregistered_files =
             warn_and_remove_already_registered(&mut transaction, files).await?;
-        if let Some((count, rows_affected)) =
-            insert_into_pacsfile(&mut transaction, unregistered_files, self.get_now()).await?
-        {
-            if count.get() as u64 == rows_affected {
-                transaction
-                    .commit()
-                    .await
-                    .map_err(PacsFileDatabaseError::from)
-            } else {
-                Err(PacsFileDatabaseError::WrongNumberOfAffectedRows {
-                    count,
-                    rows_affected,
-                })
-            }
+        let (count, rows_affected) =
+            insert_into_pacsfile(&mut transaction, unregistered_files, self.get_now()).await?;
+        if count == rows_affected {
+            transaction
+                .commit()
+                .await
+                .map_err(PacsFileDatabaseError::from)
         } else {
-            Ok(())
+            Err(PacsFileDatabaseError::WrongNumberOfAffectedRows {
+                count,
+                rows_affected,
+            })
         }
     }
 
@@ -83,16 +79,6 @@ impl CubePostgresClient {
     }
 }
 
-const PACSFILE_INSERT_STATEMENT: &str = r#"INSERT INTO pacsfiles_pacsfile (
-creation_date, fname, "PatientID", "PatientName", "StudyInstanceUID", "StudyDescription",
-"SeriesInstanceUID", "SeriesDescription", pacs_id, "PatientAge", "PatientBirthDate",
-"PatientSex", "Modality", "ProtocolName", "StudyDate", "AccessionNumber") VALUES"#;
-const PACSFILE_INSERT_TUPLE_LENGTH: NonZeroUsize = match NonZeroUsize::new(16) {
-    // https://ao.owo.si/questions/66838439/how-can-i-safely-initialise-a-constant-of-type-nonzerou8
-    Some(n) => n,
-    None => [][0],
-};
-
 /// Execute the SQL `INSERT INTO pacsfiles_pacsfile ...` command, which registers files to CUBE's
 /// database.
 ///
@@ -104,52 +90,101 @@ async fn insert_into_pacsfile<'a>(
     transaction: &mut sqlx::Transaction<'a, sqlx::Postgres>,
     files: Vec<&'a PacsFileRegistrationRequest>,
     creation_date: OffsetDateTime,
-) -> Result<Option<(NonZeroUsize, u64)>, sqlx::Error> {
-    if let Some(count) = NonZeroUsize::new(files.len()) {
-        todo!()
-        // let statement = prepared_statement_for(
-        //     PACSFILE_INSERT_STATEMENT,
-        //     PACSFILE_INSERT_TUPLE_LENGTH,
-        //     count,
-        // );
-        // let query = files.iter().fold(
-        //     sqlx::query(&statement),
-        //     |query, file| {
-        //         // N.B. order must exactly match PACSFILE_INSERT_STATEMENT
-        //         query
-        //             .bind(creation_date)
-        //             .bind(&file.path)
-        //             .bind(&file.PatientID)
-        //             .bind(file.PatientName.as_ref())
-        //             .bind(&file.StudyInstanceUID)
-        //             .bind(file.StudyDescription.as_ref())
-        //             .bind(&file.SeriesInstanceUID)
-        //             .bind(file.SeriesDescription.as_ref())
-        //             .bind(file.pacs_name.as_str())
-        //             .bind(file.PatientName.as_ref())
-        //             .bind(file.PatientBirthDate.as_ref())
-        //             .bind(file.PatientSex.as_ref())
-        //             .bind(file.Modality.as_ref())
-        //             .bind(file.ProtocolName.as_ref())
-        //             .bind(&file.StudyDate)
-        //             .bind(file.AccessionNumber.as_ref())
-        //     }
-        // );
-        // let result = query.execute(&mut **transaction).await?;
-        // Ok(Some((count, result.rows_affected())))
-    } else {
-        Ok(None)
+) -> Result<(u64, u64), sqlx::Error> {
+    if files.is_empty() {
+        return Ok((0, 0));
     }
+    create_pacs_as_needed(transaction, files.clone()).await?;
+    // bulk insert with PostgreSQL example:
+    // https://github.com/launchbadge/sqlx/blob/main/FAQ.md#how-can-i-bind-an-array-to-a-values-clause-how-can-i-do-bulk-inserts
+    let query = sqlx::query!(
+        r#"INSERT INTO pacsfiles_pacsfile (
+                   creation_date,      fname,     "PatientID", "PatientName", "StudyInstanceUID", "StudyDescription", "SeriesInstanceUID", "SeriesDescription", "PatientAge",  "PatientBirthDate", "PatientSex", "Modality", "ProtocolName", "StudyDate", "AccessionNumber", pacs_id
+        )
+        SELECT
+                   creation_date,      fname,     "PatientID", "PatientName", "StudyInstanceUID", "StudyDescription", "SeriesInstanceUID", "SeriesDescription", "PatientAge",  "PatientBirthDate", "PatientSex", "Modality", "ProtocolName", "StudyDate", "AccessionNumber", pacs.id
+        FROM
+            UNNEST($1::timestamptz[], $2::text[], $3::text[],  $4::text[],    $5::text[],         $6::text[],         $7::text[],          $8::text[],          $9::integer[], $10::date[],        $11::text[],  $12::text[], $13::text[],   $14::date[], $15::text[],       $16::text[])
+            AS incoming(creation_date, fname,     "PatientID", "PatientName", "StudyInstanceUID", "StudyDescription", "SeriesInstanceUID", "SeriesDescription", "PatientAge",  "PatientBirthDate", "PatientSex", "Modality", "ProtocolName", "StudyDate", "AccessionNumber", pacs_name)
+        LEFT JOIN pacsfiles_pacs pacs ON incoming.pacs_name = pacs.identifier
+        "#,
+        &files.iter().map(|_| creation_date).collect::<Vec<_>>(),
+        &files.iter().map(|f| f.path.to_string()).collect::<Vec<_>>(),
+        &files
+            .iter()
+            .map(|f| f.PatientID.to_string())
+            .collect::<Vec<_>>(),
+        &files
+            .iter()
+            .map(|f| f.PatientName.clone())
+            .collect::<Vec<_>>() as &[Option<String>],
+        &files
+            .iter()
+            .map(|f| f.StudyInstanceUID.to_string())
+            .collect::<Vec<_>>(),
+        &files
+            .iter()
+            .map(|f| f.StudyDescription.clone())
+            .collect::<Vec<_>>() as &[Option<String>],
+        &files
+            .iter()
+            .map(|f| f.SeriesInstanceUID.to_string())
+            .collect::<Vec<_>>(),
+        &files
+            .iter()
+            .map(|f| f.SeriesDescription.clone())
+            .collect::<Vec<_>>() as &[Option<String>],
+        &files
+            .iter()
+            .map(|f| f.PatientAge.clone())
+            .collect::<Vec<_>>() as &[Option<i32>],
+        &files
+            .iter()
+            .map(|f| f.PatientBirthDate.clone())
+            .collect::<Vec<_>>() as &[Option<String>],
+        &files
+            .iter()
+            .map(|f| f.PatientSex.clone())
+            .collect::<Vec<_>>() as &[Option<String>],
+        &files.iter().map(|f| f.Modality.clone()).collect::<Vec<_>>() as &[Option<String>],
+        &files
+            .iter()
+            .map(|f| f.ProtocolName.clone())
+            .collect::<Vec<_>>() as &[Option<String>],
+        &files.iter().map(|f| f.StudyDate).collect::<Vec<_>>(),
+        &files
+            .iter()
+            .map(|f| f.AccessionNumber.clone())
+            .collect::<Vec<_>>() as &[Option<String>],
+        &files
+            .iter()
+            .map(|f| f.pacs_name.to_string())
+            .collect::<Vec<_>>()
+    );
+    let result = query.execute(&mut **transaction).await?;
+    Ok((files.len() as u64, result.rows_affected()))
 }
 
-/// Outcome of attempting to register files to the database.
-///
-/// Pro-tip: if `new_files_count != rows_affected`, something is seriously broken!
-pub(crate) struct InsertionOutcome {
-    /// Number of new files registered to the database
-    count: NonZeroUsize,
-    /// Number of database rows affected
-    rows_affected: u64,
+async fn create_pacs_as_needed(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    files: impl IntoIterator<Item = &PacsFileRegistrationRequest>,
+) -> Result<PgQueryResult, sqlx::Error> {
+    let unique_pacs_names: Vec<String> = files
+        .into_iter()
+        .map(|f| f.pacs_name.as_str())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .map(|pacs_name| pacs_name.to_string())
+        .collect();
+    sqlx::query!(
+        r#"INSERT INTO pacsfiles_pacs(identifier)
+        SELECT new_names FROM UNNEST($1::text[]) AS new_names
+        LEFT JOIN pacsfiles_pacs ON new_names = pacsfiles_pacs.identifier
+        WHERE pacsfiles_pacs.id IS NULL"#,
+        &unique_pacs_names
+    )
+    .execute(&mut **transaction)
+    .await
 }
 
 /// Query the database to check whether any of the files are already registered.
@@ -212,54 +247,76 @@ async fn query_for_existing(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     files: &[PacsFileRegistrationRequest],
 ) -> Result<Vec<String>, sqlx::Error> {
-    if let Some(n_files) = NonZeroUsize::new(files.len()) {
-        let paths: Vec<_> = files.iter().map(|file| file.path.to_string()).collect();
-        let query = sqlx::query_scalar!(
+    if files.is_empty() {
+        return Ok(Vec::with_capacity(0));
+    }
+    let paths: Vec<_> = files.iter().map(|file| file.path.to_string()).collect();
+    let query = sqlx::query_scalar!(
             "SELECT fname FROM pacsfiles_pacsfile INNER JOIN UNNEST($1::text[]) AS incoming_paths ON fname = incoming_paths WHERE fname = incoming_paths",
             &paths
         );
-        query.fetch_all(&mut **transaction).await
-    } else {
-        Ok(Vec::with_capacity(0))
-    }
+    query.fetch_all(&mut **transaction).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dicomrs_options::ClientAETitle;
+    use chris::search::GetOnlyError;
+    use chris::{
+        types::{CubeUrl, Username},
+        ChrisClient,
+    };
+    use futures::prelude::*;
     use rstest::*;
     use sqlx::postgres::PgPoolOptions;
     use std::collections::HashSet;
+    use std::path::PathBuf;
 
     #[fixture]
     #[once]
     fn pool() -> sqlx::PgPool {
         futures::executor::block_on(async {
-            let pool = PgPoolOptions::new()
+            PgPoolOptions::new()
                 .max_connections(4)
                 .connect(env!("DATABASE_URL"))
                 .await
-                .unwrap();
-            add_example_data(&pool).await.unwrap();
-            pool
+                .unwrap()
         })
     }
 
-    async fn add_example_data(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
+    #[fixture]
+    #[once]
+    fn chris_client() -> ChrisClient {
+        futures::executor::block_on(async {
+            let cube_url = CubeUrl::new(envmnt::get_or_panic("CHRIS_URL")).unwrap();
+            let username = Username::new(envmnt::get_or_panic("CHRIS_USERNAME"));
+            let password = envmnt::get_or_panic("CHRIS_PASSWORD");
+            let account = chris::Account::new(&cube_url, &username, &password);
+            let token = account.get_token().await.unwrap();
+            ChrisClient::build(cube_url, username, token)
+                .unwrap()
+                .connect()
+                .await
+                .unwrap()
+        })
+    }
+
+    async fn add_3_existing_rows(pool: &sqlx::PgPool, pacs_name: &str) -> Result<(), sqlx::Error> {
         sqlx::query!(
-            "INSERT INTO pacsfiles_pacs (identifier) VALUES ('OXIUNITTEST') ON CONFLICT DO NOTHING"
+            "INSERT INTO pacsfiles_pacs (identifier) VALUES ($1) ON CONFLICT DO NOTHING",
+            pacs_name
         )
         .execute(pool)
         .await?;
         sqlx::query!(
             r#"MERGE INTO pacsfiles_pacsfile pacsfile USING (
-                SELECT *, (SELECT id FROM pacsfiles_pacs WHERE identifier = 'OXIUNITTEST') as pacs_id FROM (
+                SELECT *, (SELECT id FROM pacsfiles_pacs WHERE identifier = $1) as pacs_id FROM (
                     VALUES
-                    ('2024-05-07 19:32:11.000001+00'::timestamptz, 'SERVICES/PACS/OXIUNITTEST/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0183-1.3.12.2.1107.5.2.19.45152.2013030808105561901985453.dcm', '1449c1d',   'Anon Pienaar', '1.2.840.113845.11.1000000001785349915.20130308061609.6346698', 'MR-Brain w/o Contrast', '1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0', 'SAG MPRAGE 220 FOV',  1096,         '2009-07-01'::date, 'M',          'MR',       'SAG MPRAGE 220 FOV',  '2013-03-08'::date, '98edede8b2'),
-                    ('2024-05-07 19:31:25.080211+00'::timestamptz, 'SERVICES/PACS/OXIUNITTEST/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0184-1.3.12.2.1107.5.2.19.45152.2013030808105562925785459.dcm', '1449c1d',   'Anon Pienaar', '1.2.840.113845.11.1000000001785349915.20130308061609.6346698', 'MR-Brain w/o Contrast', '1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0', 'SAG MPRAGE 220 FOV',  1096,         '2009-07-01'::date, 'M',          'MR',       'SAG MPRAGE 220 FOV',  '2013-03-08'::date, '98edede8b2'),
-                    ('2024-05-07 19:32:11.000001+00'::timestamptz, 'SERVICES/PACS/OXIUNITTEST/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0185-1.3.12.2.1107.5.2.19.45152.2013030808105550546785443.dcm', '1449c1d',   'Anon Pienaar', '1.2.840.113845.11.1000000001785349915.20130308061609.6346698', 'MR-Brain w/o Contrast', '1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0', 'SAG MPRAGE 220 FOV',  1096,         '2009-07-01'::date, 'M',          'MR',       'SAG MPRAGE 220 FOV',  '2013-03-08'::date, '98edede8b2')
-                ) AS Examples(creation_date,                       fname,                                                                                                                                                                                            "PatientID", "PatientName",  "StudyInstanceUID",                                             "StudyDescription",      "SeriesInstanceUID",                                          "SeriesDescription",   "PatientAge", "PatientBirthDate", "PatientSex", "Modality", "ProtocolName",        "StudyDate",        "AccessionNumber")
+                    ('2024-05-07 19:32:11.000001+00'::timestamptz, $2,    '1449c1d',   'Anon Pienaar', '1.2.840.113845.11.1000000001785349915.20130308061609.6346698', 'MR-Brain w/o Contrast', '1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0', 'SAG MPRAGE 220 FOV',  1096,         '2009-07-01'::date, 'M',          'MR',       'SAG MPRAGE 220 FOV',  '2013-03-08'::date, '98edede8b2'),
+                    ('2024-05-07 19:31:25.080211+00'::timestamptz, $3,    '1449c1d',   'Anon Pienaar', '1.2.840.113845.11.1000000001785349915.20130308061609.6346698', 'MR-Brain w/o Contrast', '1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0', 'SAG MPRAGE 220 FOV',  1096,         '2009-07-01'::date, 'M',          'MR',       'SAG MPRAGE 220 FOV',  '2013-03-08'::date, '98edede8b2'),
+                    ('2024-05-07 19:32:11.000001+00'::timestamptz, $4,    '1449c1d',   'Anon Pienaar', '1.2.840.113845.11.1000000001785349915.20130308061609.6346698', 'MR-Brain w/o Contrast', '1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0', 'SAG MPRAGE 220 FOV',  1096,         '2009-07-01'::date, 'M',          'MR',       'SAG MPRAGE 220 FOV',  '2013-03-08'::date, '98edede8b2')
+                ) AS Examples(creation_date,                       fname, "PatientID", "PatientName",  "StudyInstanceUID",                                             "StudyDescription",      "SeriesInstanceUID",                                          "SeriesDescription",   "PatientAge", "PatientBirthDate", "PatientSex", "Modality", "ProtocolName",        "StudyDate",        "AccessionNumber")
             ) examples
             ON pacsfile.fname = examples.fname
             WHEN NOT MATCHED THEN
@@ -282,21 +339,24 @@ mod tests {
                     "ProtocolName" = examples."ProtocolName",
                     "StudyDate" = examples."StudyDate",
                     "AccessionNumber" = examples."AccessionNumber"
-            "#
+            "#,
+            pacs_name,
+            format!("SERVICES/PACS/{pacs_name}/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0183-1.3.12.2.1107.5.2.19.45152.2013030808105561901985453.dcm"),
+            format!("SERVICES/PACS/{pacs_name}/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0184-1.3.12.2.1107.5.2.19.45152.2013030808105562925785459.dcm"),
+            format!("SERVICES/PACS/{pacs_name}/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0185-1.3.12.2.1107.5.2.19.45152.2013030808105550546785443.dcm")
         ).execute(pool).await?;
         Ok(())
     }
 
-    #[fixture]
-    fn example_requests() -> Vec<PacsFileRegistrationRequest> {
+    fn example_requests(pacs_name: &str) -> Vec<PacsFileRegistrationRequest> {
         vec![
             PacsFileRegistrationRequest {
-                path: "SERVICES/PACS/OXIUNITTEST/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0184-1.3.12.2.1107.5.2.19.45152.2013030808105562925785459.dcm".to_string(),
+                path: format!("SERVICES/PACS/{pacs_name}/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0184-1.3.12.2.1107.5.2.19.45152.2013030808105562925785459.dcm"),
                 PatientID: "1449c1d".to_string(),
-                StudyDate: "2013-03-08".to_string(),
+                StudyDate: time::macros::date!(2013-03-08),
                 StudyInstanceUID: "1.2.840.113845.11.1000000001785349915.20130308061609.6346698".to_string(),
                 SeriesInstanceUID: "1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0".to_string(),
-                pacs_name: ClientAETitle::from_static("OXIUNITTEST"),
+                pacs_name: pacs_name.into(),
                 PatientName: Some("Anon Pienaar".to_string()),
                 PatientBirthDate: Some("2009-07-01".to_string()),
                 PatientAge: Some(1096),
@@ -308,12 +368,12 @@ mod tests {
                 SeriesDescription: Some("SAG MPRAGE 220 FOV".to_string()),
             },
             PacsFileRegistrationRequest {
-                path: "SERVICES/PACS/OXIUNITTEST/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0185-1.3.12.2.1107.5.2.19.45152.2013030808105550546785443.dcm".to_string(),
+                path: format!("SERVICES/PACS/{pacs_name}/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0185-1.3.12.2.1107.5.2.19.45152.2013030808105550546785443.dcm"),
                 PatientID: "1449c1d".to_string(),
-                StudyDate: "2013-03-08".to_string(),
+                StudyDate: time::macros::date!(2013-03-08),
                 StudyInstanceUID: "1.2.840.113845.11.1000000001785349915.20130308061609.6346698".to_string(),
                 SeriesInstanceUID: "1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0".to_string(),
-                pacs_name: ClientAETitle::from_static("OXIUNITTEST"),
+                pacs_name: pacs_name.into(),
                 PatientName: Some("Anon Pienaar".to_string()),
                 PatientBirthDate: Some("2009-07-01".to_string()),
                 PatientAge: Some(1096),
@@ -325,12 +385,12 @@ mod tests {
                 SeriesDescription: Some("SAG MPRAGE 220 FOV".to_string()),
             },
             PacsFileRegistrationRequest {
-                path: "SERVICES/PACS/OXIUNITTEST/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0186-1.3.12.2.1107.5.2.19.45152.2013030808105578565885477.dcm".to_string(),
+                path: format!("SERVICES/PACS/{pacs_name}/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0186-1.3.12.2.1107.5.2.19.45152.2013030808105578565885477.dcm"),
                 PatientID: "1449c1d".to_string(),
-                StudyDate: "2013-03-08".to_string(),
+                StudyDate: time::macros::date!(2013-03-08),
                 StudyInstanceUID: "1.2.840.113845.11.1000000001785349915.20130308061609.6346698".to_string(),
                 SeriesInstanceUID: "1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0".to_string(),
-                pacs_name: ClientAETitle::from_static("OXIUNITTEST"),
+                pacs_name: pacs_name.into(),
                 PatientName: Some("Anon Pienaar".to_string()),
                 PatientBirthDate: Some("2009-07-01".to_string()),
                 PatientAge: Some(1096),
@@ -357,18 +417,96 @@ mod tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_query_for_existing(
-        pool: &sqlx::PgPool,
-        example_requests: Vec<PacsFileRegistrationRequest>,
-    ) -> Result<(), sqlx::Error> {
+    async fn test_query_for_existing(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
         let mut transaction = pool.begin().await?;
+        add_3_existing_rows(pool, "OUT_QUERY_FOR_EXIST").await?;
+        let example_requests = example_requests("OUT_QUERY_FOR_EXIST");
         let actual = query_for_existing(&mut transaction, &example_requests).await?;
         let actual_set = HashSet::from_iter(actual.iter().map(|s| s.as_str()));
         let expected_set = HashSet::from([
-            "SERVICES/PACS/OXIUNITTEST/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0184-1.3.12.2.1107.5.2.19.45152.2013030808105562925785459.dcm",
-            "SERVICES/PACS/OXIUNITTEST/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0185-1.3.12.2.1107.5.2.19.45152.2013030808105550546785443.dcm",
+            "SERVICES/PACS/OUT_QUERY_FOR_EXIST/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0184-1.3.12.2.1107.5.2.19.45152.2013030808105562925785459.dcm",
+            "SERVICES/PACS/OUT_QUERY_FOR_EXIST/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0185-1.3.12.2.1107.5.2.19.45152.2013030808105550546785443.dcm",
         ]);
         assert_eq!(actual_set, expected_set);
         Ok(())
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_register(
+        pool: &sqlx::PgPool,
+        chris_client: &ChrisClient,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db_client = CubePostgresClient::new(pool.clone(), Some(time::macros::offset!(-5)));
+        let pacs_name = format!("OUT_{}", time::OffsetDateTime::now_utc().unix_timestamp());
+        let requests = example_requests(&pacs_name);
+
+        // sanity check: are we starting from a fresh state?
+        let count = chris_client
+            .pacsfiles()
+            .pacs_identifier(&pacs_name)
+            .search()
+            .get_count()
+            .await?;
+        assert_eq!(count, 0);
+
+        // register files
+        pretend_to_receive_dicom_files(&requests).await?;
+        db_client.register(&requests).await?;
+
+        // assert files were registered
+        let count = chris_client
+            .pacsfiles()
+            .pacs_identifier(&pacs_name)
+            .search()
+            .get_count()
+            .await?;
+        assert_eq!(count, requests.len());
+        let pacs_name_ptr = &pacs_name;
+        futures::stream::iter(requests.iter())
+            .map(Ok)
+            .try_for_each_concurrent(4, |req| async move {
+                let file = chris_client
+                    .pacsfiles()
+                    .fname_exact(&req.path)
+                    .search()
+                    .get_only()
+                    .await?;
+                assert_eq!(file.object.fname.as_str(), &req.path);
+                assert_eq!(&file.object.patient_id, &req.PatientID);
+                assert_eq!(&file.object.pacs_identifier, pacs_name_ptr);
+                Ok::<_, GetOnlyError>(())
+            })
+            .await?;
+
+        // assert reregistering files should be idempotent
+        db_client.register(&requests).await?;
+        let count = chris_client
+            .pacsfiles()
+            .pacs_identifier(&pacs_name)
+            .search()
+            .get_count()
+            .await?;
+        assert_eq!(count, requests.len());
+        Ok(())
+    }
+
+    async fn pretend_to_receive_dicom_files(
+        requests: impl IntoIterator<Item = &PacsFileRegistrationRequest>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let root = std::env::var("CHRIS_FILES_ROOT")
+            .map(PathBuf::from)
+            .expect("The environment variable CHRIS_FILES_ROOT must be set.");
+        futures::stream::iter(requests.into_iter())
+            .map(|req| root.join(&req.path))
+            .map(Ok)
+            .try_for_each_concurrent(4, |p| async move {
+                if let Some(dir) = p.parent() {
+                    fs_err::tokio::create_dir_all(dir).await?;
+                }
+                fs_err::tokio::write(p, b"i am written by pretend_to_receive_dicom_files").await
+            })
+            .await
+            .map_err(|e| e.into())
     }
 }
