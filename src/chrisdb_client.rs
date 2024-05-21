@@ -177,10 +177,7 @@ async fn create_pacs_as_needed(
         .map(|pacs_name| pacs_name.to_string())
         .collect();
     sqlx::query!(
-        r#"INSERT INTO pacsfiles_pacs(identifier)
-        SELECT new_names FROM UNNEST($1::text[]) AS new_names
-        LEFT JOIN pacsfiles_pacs ON new_names = pacsfiles_pacs.identifier
-        WHERE pacsfiles_pacs.id IS NULL"#,
+        r#"INSERT INTO pacsfiles_pacs(identifier) SELECT * FROM UNNEST($1::text[]) ON CONFLICT (identifier) DO NOTHING"#,
         &unique_pacs_names
     )
     .execute(&mut **transaction)
@@ -274,7 +271,6 @@ mod tests {
     use std::path::PathBuf;
 
     #[fixture]
-    #[once]
     fn pool() -> sqlx::PgPool {
         futures::executor::block_on(async {
             PgPoolOptions::new()
@@ -286,7 +282,6 @@ mod tests {
     }
 
     #[fixture]
-    #[once]
     fn chris_client() -> ChrisClient {
         futures::executor::block_on(async {
             let cube_url = CubeUrl::new(envmnt::get_or_panic("CHRIS_URL")).unwrap();
@@ -302,12 +297,12 @@ mod tests {
         })
     }
 
-    async fn add_3_existing_rows(pool: &sqlx::PgPool, pacs_name: &str) -> Result<(), sqlx::Error> {
+    async fn add_3_existing_rows(pool: sqlx::PgPool, pacs_name: &str) -> Result<(), sqlx::Error> {
         sqlx::query!(
             "INSERT INTO pacsfiles_pacs (identifier) VALUES ($1) ON CONFLICT DO NOTHING",
             pacs_name
         )
-        .execute(pool)
+        .execute(&pool)
         .await?;
         sqlx::query!(
             r#"MERGE INTO pacsfiles_pacsfile pacsfile USING (
@@ -344,7 +339,7 @@ mod tests {
             format!("SERVICES/PACS/{pacs_name}/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0183-1.3.12.2.1107.5.2.19.45152.2013030808105561901985453.dcm"),
             format!("SERVICES/PACS/{pacs_name}/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0184-1.3.12.2.1107.5.2.19.45152.2013030808105562925785459.dcm"),
             format!("SERVICES/PACS/{pacs_name}/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/00005-SAG_MPRAGE_220_FOV-a27cf06/0185-1.3.12.2.1107.5.2.19.45152.2013030808105550546785443.dcm")
-        ).execute(pool).await?;
+        ).execute(&pool).await?;
         Ok(())
     }
 
@@ -417,7 +412,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_query_for_existing(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
+    async fn test_query_for_existing(pool: sqlx::PgPool) -> Result<(), sqlx::Error> {
         let mut transaction = pool.begin().await?;
         add_3_existing_rows(pool, "OUT_QUERY_FOR_EXIST").await?;
         let example_requests = example_requests("OUT_QUERY_FOR_EXIST");
@@ -434,11 +429,11 @@ mod tests {
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_register(
-        pool: &sqlx::PgPool,
-        chris_client: &ChrisClient,
+        pool: sqlx::PgPool,
+        chris_client: ChrisClient,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let db_client = CubePostgresClient::new(pool.clone(), Some(time::macros::offset!(-5)));
-        let pacs_name = format!("OUT_{}", time::OffsetDateTime::now_utc().unix_timestamp());
+        let pacs_name = format!("OUT_{}", OffsetDateTime::now_utc().unix_timestamp());
         let requests = example_requests(&pacs_name);
 
         // sanity check: are we starting from a fresh state?
@@ -462,11 +457,12 @@ mod tests {
             .get_count()
             .await?;
         assert_eq!(count, requests.len());
-        let pacs_name_ptr = &pacs_name;
+        let pacs_name_ref = &pacs_name;
+        let chris_client_ref = &chris_client;
         futures::stream::iter(requests.iter())
             .map(Ok)
             .try_for_each_concurrent(4, |req| async move {
-                let file = chris_client
+                let file = chris_client_ref
                     .pacsfiles()
                     .fname_exact(&req.path)
                     .search()
@@ -474,7 +470,7 @@ mod tests {
                     .await?;
                 assert_eq!(file.object.fname.as_str(), &req.path);
                 assert_eq!(&file.object.patient_id, &req.PatientID);
-                assert_eq!(&file.object.pacs_identifier, pacs_name_ptr);
+                assert_eq!(&file.object.pacs_identifier, pacs_name_ref);
                 Ok::<_, GetOnlyError>(())
             })
             .await?;
