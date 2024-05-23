@@ -1,5 +1,3 @@
-use crate::cube_client::CubePacsStorageClient;
-use crate::cube_sender::ChrisSender;
 use crate::dicomrs_options::{ClientAETitle, DicomRsConfig};
 use crate::event::AssociationEvent;
 use crate::scp::handle_association;
@@ -9,87 +7,20 @@ use opentelemetry::{global, Context, KeyValue};
 use opentelemetry_semantic_conventions as semconv;
 use std::collections::HashMap;
 use std::net::{SocketAddrV4, TcpListener, TcpStream};
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
-use uuid::Uuid;
-
-/// Start listening for DICOM instances.
-///
-/// This function creates 2 thread pools:
-///
-/// - Receive DICOM files from a TCP port over the DIMSE C-STORE protocol
-/// - Push DICOM files to _CUBE_
-///
-/// `finite_connections` is a variable only used for testing. It tells the server to exit
-/// after a finite number of connections, or on the first error.
-pub fn run_server(
-    address: SocketAddrV4,
-    chris: CubePacsStorageClient,
-    config: DicomRsConfig,
-    pacs_addresses: HashMap<ClientAETitle, String>,
-    max_pdu_length: usize,
-    finite_connections: Option<usize>,
-    listener_threads: usize,
-    pusher_threads: usize,
-) -> anyhow::Result<()> {
-    let (rx, tx) = mpsc::channel();
-    let pusher = thread::spawn(move || run_chris_pusher(chris, tx, pusher_threads));
-    let listener = thread::spawn(move || {
-        run_dicom_listener(
-            address,
-            config,
-            finite_connections,
-            listener_threads,
-            max_pdu_length,
-            rx,
-            pacs_addresses,
-        )
-    });
-    listener.join().unwrap()?;
-    pusher.join().unwrap()
-}
-
-/// Wait for received DICOM instances. For each DICOM instance file, push and register it to _CUBE_.
-fn run_chris_pusher(
-    client: CubePacsStorageClient,
-    incoming: Receiver<AssociationEvent>,
-    n_threads: usize,
-) -> anyhow::Result<()> {
-    let mut pool = ThreadPool::new(n_threads, "cube_pusher");
-    let sender = ChrisSender::new(client);
-    let had_error = Arc::new(Mutex::new(false));
-    while let Ok(event) = incoming.recv() {
-        let jobs = sender.prepare_jobs_for(event);
-        for job in jobs {
-            let has_error = Arc::clone(&had_error);
-            pool.execute(move || {
-                if let Err(e) = job.run() {
-                    tracing::error!("{}", e.to_string());
-                    *has_error.lock().unwrap() = true;
-                }
-            });
-        }
-    }
-    pool.shutdown();
-    if Arc::into_inner(had_error).unwrap().into_inner().unwrap() {
-        anyhow::bail!("Some pushes to CUBE were unsuccessful")
-    } else {
-        Ok(())
-    }
-}
+use std::sync::Arc;
+use tokio::sync::mpsc::UnboundedSender;
 
 /// Listen for incoming DICOM instances on a TCP port.
 ///
 /// Every TCP connection is handled by [handle_association], which transmits DICOM instance file
 /// objects through the given `handler`.
-fn run_dicom_listener(
+pub fn dicom_listener_tcp_loop(
     address: SocketAddrV4,
     config: DicomRsConfig,
     finite_connections: Option<usize>,
     n_threads: usize,
     max_pdu_length: usize,
-    handler: Sender<AssociationEvent>,
+    handler: UnboundedSender<AssociationEvent>,
     pacs_addresses: HashMap<ClientAETitle, String>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(address)?;
@@ -114,13 +45,11 @@ fn run_dicom_listener(
                 let ae_title = Arc::clone(&ae_title);
                 let pacs_address = Arc::clone(&pacs_addresses);
                 pool.execute(move || {
-                    let uuid = Uuid::new_v4();
+                    let ulid = ulid::Ulid::new();
                     let _context_guard = cx.attach();
                     let context = Context::current();
-                    context.span().set_attribute(KeyValue::new(
-                        "association_uuid",
-                        uuid.hyphenated().to_string(),
-                    ));
+                    let association_attribute = KeyValue::new("association_ulid", ulid.to_string());
+                    context.span().set_attribute(association_attribute);
                     if let Ok(address) = scu_stream.peer_addr() {
                         let peer_attributes = vec![
                             KeyValue::new(semconv::trace::CLIENT_ADDRESS, address.ip().to_string()),
@@ -133,20 +62,26 @@ fn run_dicom_listener(
                         &options,
                         max_pdu_length,
                         &handler,
-                        uuid,
+                        ulid,
                         &ae_title,
                         &pacs_address,
                     ) {
                         Ok(..) => {
                             handler
-                                .send(AssociationEvent::Finish { uuid, ok: true })
+                                .send(AssociationEvent::Finish {
+                                    ulid,
+                                    ok: true,
+                                })
                                 .unwrap();
                             context.span().set_status(Status::Ok)
                         }
                         Err(e) => {
                             tracing::error!("{:?}", e);
                             handler
-                                .send(AssociationEvent::Finish { uuid, ok: false })
+                                .send(AssociationEvent::Finish {
+                                    ulid,
+                                    ok: false,
+                                })
                                 .unwrap();
                             context.span().set_status(Status::error(e.to_string()))
                         }
@@ -159,3 +94,68 @@ fn run_dicom_listener(
     pool.shutdown();
     Ok(())
 }
+
+
+// /// Start listening for DICOM instances.
+// ///
+// /// This function creates 2 thread pools:
+// ///
+// /// - Receive DICOM files from a TCP port over the DIMSE C-STORE protocol
+// /// - Push DICOM files to _CUBE_
+// ///
+// /// `finite_connections` is a variable only used for testing. It tells the server to exit
+// /// after a finite number of connections, or on the first error.
+// pub fn run_dicom_listener(
+//     address: SocketAddrV4,
+//     config: DicomRsConfig,
+//     pacs_addresses: HashMap<ClientAETitle, String>,
+//     max_pdu_length: usize,
+//     finite_connections: Option<usize>,
+//     listener_threads: usize,
+//     pusher_threads: usize,
+// ) -> anyhow::Result<()> {
+//     let (rx, tx) = mpsc::channel();
+//     let pusher = thread::spawn(move || run_chris_pusher(chris, tx, pusher_threads));
+//     let listener = thread::spawn(move || {
+//         dicom_listener_tcp_loop(
+//             address,
+//             config,
+//             finite_connections,
+//             listener_threads,
+//             max_pdu_length,
+//             rx,
+//             pacs_addresses,
+//         )
+//     });
+//     listener.join().unwrap()?;
+//     pusher.join().unwrap()
+// }
+//
+// /// Wait for received DICOM instances. For each DICOM instance file, push and register it to _CUBE_.
+// fn run_chris_pusher(
+//     client: CubePacsStorageClient,
+//     incoming: Receiver<AssociationEvent>,
+//     n_threads: usize,
+// ) -> anyhow::Result<()> {
+//     let mut pool = ThreadPool::new(n_threads, "cube_pusher");
+//     let sender = ChrisSender::new(client);
+//     let had_error = Arc::new(Mutex::new(false));
+//     while let Ok(event) = incoming.recv() {
+//         let jobs = sender.prepare_jobs_for(event);
+//         for job in jobs {
+//             let has_error = Arc::clone(&had_error);
+//             pool.execute(move || {
+//                 if let Err(e) = job.run() {
+//                     tracing::error!("{}", e.to_string());
+//                     *has_error.lock().unwrap() = true;
+//                 }
+//             });
+//         }
+//     }
+//     pool.shutdown();
+//     if Arc::into_inner(had_error).unwrap().into_inner().unwrap() {
+//         anyhow::bail!("Some pushes to CUBE were unsuccessful")
+//     } else {
+//         Ok(())
+//     }
+// }

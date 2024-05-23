@@ -51,7 +51,8 @@ services:
       CHRIS_LISTENER_THREADS: 8
       CHRIS_PUSHER_THREADS: ${CHRIS_PUSHER_THREADS:-4}
       CHRIS_VERBOSE: "yes"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_RESOURCE_ATTRIBUTES: service.name=oxidicom-test
       CARGO_TARGET_DIR: /target
       CARGO_HOME: /cargo
@@ -81,7 +82,7 @@ services:
       test-oxidicom:
 
   openobserve:
-    image: public.ecr.aws/zinclabs/openobserve:v0.9.1
+    image: public.ecr.aws/zinclabs/openobserve:v0.10.6-rc1
     environment:
       ZO_ROOT_USER_EMAIL: dev@babymri.org
       ZO_ROOT_USER_PASSWORD: chris1234
@@ -96,7 +97,7 @@ services:
     networks:
       test-oxidicom:
   otel-collector:
-    image: docker.io/otel/opentelemetry-collector:0.96.0
+    image: docker.io/otel/opentelemetry-collector:0.101.0
     restart: unless-stopped
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:

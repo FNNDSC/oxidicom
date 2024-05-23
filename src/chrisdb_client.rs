@@ -476,6 +476,7 @@ mod tests {
             .await?;
 
         // assert reregistering files should be idempotent
+        // TODO assert creation_date and other fields did not change
         db_client.register(&requests).await?;
         let count = chris_client
             .pacsfiles()

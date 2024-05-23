@@ -1,5 +1,5 @@
 use dicom::object::DefaultDicomObject;
-use uuid::Uuid;
+use ulid::Ulid;
 
 use crate::dicomrs_options::{ClientAETitle, OurAETitle};
 
@@ -8,7 +8,7 @@ pub(crate) enum AssociationEvent {
     /// Association established successfully and client AE title is known.
     Start {
         /// UUID uniquely identifying the TCP connection instance
-        uuid: Uuid,
+        ulid: Ulid,
         /// AE title of the client sending us DICOMs
         aec: ClientAETitle,
         /// Our AE title
@@ -17,7 +17,7 @@ pub(crate) enum AssociationEvent {
         pacs_address: Option<String>,
     },
     /// Received a DICOM file.
-    DicomInstance { uuid: Uuid, dcm: DefaultDicomObject },
+    DicomInstance { ulid: Ulid, dcm: DefaultDicomObject },
     /// No more DICOM files will be received for this association.
-    Finish { uuid: Uuid, ok: bool },
+    Finish { ulid: Ulid, ok: bool },
 }

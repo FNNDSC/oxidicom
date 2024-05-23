@@ -18,6 +18,8 @@ pub struct DicomRsConfig {
     /// Whether receiving PDUs must not surpass the negotiated maximum PDU length.
     pub strict: bool,
     pub uncompressed_only: bool,
+    /// Whether to accept unknown abstract syntaxes.
+    pub promiscuous: bool
 }
 
 impl<'a> Into<ServerAssociationOptions<'a, AcceptAny>> for DicomRsConfig {
@@ -40,6 +42,6 @@ impl<'a> Into<ServerAssociationOptions<'a, AcceptAny>> for DicomRsConfig {
         for uid in ABSTRACT_SYNTAXES {
             options = options.with_abstract_syntax(*uid);
         }
-        options
+        options.promiscuous(self.promiscuous)
     }
 }

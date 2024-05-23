@@ -2,7 +2,7 @@ use std::thread;
 
 use crate::assertions::run_assertions;
 use crate::orthanc_client::orthanc_store;
-use oxidicom::run_server_from_env;
+use oxidicom::run_everything_from_env;
 
 mod assertions;
 mod orthanc_client;
@@ -49,5 +49,5 @@ fn run_server_for_test(n_clients: usize) {
     let n_proc = thread::available_parallelism()
         .map(|n| std::cmp::min(n.get(), 8))
         .ok();
-    run_server_from_env(Some(n_clients), n_proc, Some(n_clients)).unwrap()
+    run_everything_from_env(Some(n_clients), n_proc, Some(n_clients)).unwrap()
 }

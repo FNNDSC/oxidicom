@@ -17,10 +17,10 @@ use opentelemetry::trace::{Status, TraceContextExt, Tracer};
 use opentelemetry::{global, KeyValue};
 use std::borrow::Cow;
 use std::io::Read;
-use uuid::Uuid;
+use ulid::Ulid;
 
 pub(crate) struct FindScuParameters {
-    pub(crate) uuid: Uuid,
+    pub(crate) ulid: Ulid,
     pub(crate) pacs_address: String,
     pub(crate) aec: ClientAETitle,
     pub(crate) aet: OurAETitle,
@@ -250,7 +250,7 @@ impl FindScuParameters {
 
     fn to_otel_attributes(&self) -> Vec<KeyValue> {
         vec![
-            KeyValue::new("association_uuid", self.uuid.hyphenated().to_string()),
+            KeyValue::new("association_ulid", self.ulid.to_string()),
             KeyValue::new("pacs_address", self.pacs_address.to_string()),
             KeyValue::new("aec", self.aec.to_string()),
             KeyValue::new("aet", self.aet.to_string()),

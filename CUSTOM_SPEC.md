@@ -50,7 +50,7 @@ In reality, a PACS server will push to us whatever it wants. `oxidicom` does not
 It will register key-value pairs to
 
 ```
-SERVICES/PACS/org.fnndsc.oxidicom/{ABSOLUTE_SERIES_DIR}/{ASSOCIATION_UUID}/{KEY}={VALUE}
+SERVICES/PACS/org.fnndsc.oxidicom/{ABSOLUTE_SERIES_DIR}/{association_ulid}/{KEY}={VALUE}
 ```
 
 ### Example

@@ -5,7 +5,6 @@
 
 use std::collections::HashMap;
 use std::net::TcpStream;
-use std::sync::mpsc::Sender;
 
 use dicom::core::{DataElement, VR};
 use dicom::dicom_value;
@@ -18,7 +17,8 @@ use dicom::ul::pdu::PDataValueType;
 use dicom::ul::{Pdu, ServerAssociationOptions};
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry::KeyValue;
-use uuid::Uuid;
+use tokio::sync::mpsc::UnboundedSender;
+use ulid::Ulid;
 
 use crate::association_error::{AssociationError, AssociationError::*};
 use crate::dicomrs_options::{ClientAETitle, OurAETitle};
@@ -26,15 +26,15 @@ use crate::event::AssociationEvent;
 
 /// Handle an "association" from an "SCU" (i.e. handle when someone is trying to give us DICOM files).
 ///
-/// The `uuid` parameter should be a unique UUID for this SCU stream instance.
+/// The `ulid` parameter should be a unique ULID for this SCU stream instance.
 /// When the association is first established, a [AssociationEvent::Start] event will be sent through `channel`.
 /// For each received DICOM file, it will be sent through the `channel` as [AssociationEvent::DicomInstance].
 pub fn handle_association(
     scu_stream: TcpStream,
     options: &ServerAssociationOptions<AcceptAny>,
     max_pdu_length: usize,
-    channel: &Sender<AssociationEvent>,
-    uuid: Uuid,
+    channel: &UnboundedSender<AssociationEvent>,
+    ulid: Ulid,
     aet: &OurAETitle,
     pacs_addresses: &HashMap<ClientAETitle, String>,
 ) -> Result<(), AssociationError> {
@@ -47,7 +47,7 @@ pub fn handle_association(
         .set_attribute(KeyValue::new("aet", aec.to_string()));
     channel
         .send(AssociationEvent::Start {
-            uuid,
+            ulid,
             aet: aet.clone(),
             aec,
             pacs_address,
@@ -66,7 +66,7 @@ pub fn handle_association(
     let mut sop_instance_uid = "".to_string();
 
     while let Some(mut pdu) = bubble_no_pdu(association.receive())? {
-        tracing::trace!("scu ----> scp: {}", pdu.short_description());
+        tracing::trace!("scu ----> scp: {}", pdu.short_description().to_string());
         match pdu {
             Pdu::PData { ref mut data } => {
                 if data.is_empty() {
@@ -74,128 +74,130 @@ pub fn handle_association(
                     continue;
                 }
 
-                if data[0].value_type == PDataValueType::Data && !data[0].is_last {
-                    instance_buffer.append(&mut data[0].data);
-                } else if data[0].value_type == PDataValueType::Command && data[0].is_last {
-                    // commands are always in implict VR LE
-                    let ts = dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
-                    let data_value = &data[0];
-                    let v = &data_value.data;
+                for data_value in data {
+                    if data_value.value_type == PDataValueType::Data && !data_value.is_last {
+                        instance_buffer.append(&mut data_value.data);
+                    } else if data_value.value_type == PDataValueType::Command && data_value.is_last {
+                        // commands are always in implict VR LE
+                        let ts = dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
+                        let data_value = &data_value;
+                        let v = &data_value.data;
 
-                    let obj = InMemDicomObject::read_dataset_with_ts(v.as_slice(), &ts)
-                        .map_err(FailedToReadCommand)?;
-                    let command_field = obj
-                        .element(tags::COMMAND_FIELD)
-                        .map_err(|_| MissingTag(tags::COMMAND_FIELD))?
-                        .uint16()
-                        .map_err(|_| InvalidNumber(tags::COMMAND_FIELD))?;
+                        let obj = InMemDicomObject::read_dataset_with_ts(v.as_slice(), &ts)
+                            .map_err(FailedToReadCommand)?;
+                        let command_field = obj
+                            .element(tags::COMMAND_FIELD)
+                            .map_err(|_| MissingTag(tags::COMMAND_FIELD))?
+                            .uint16()
+                            .map_err(|_| InvalidNumber(tags::COMMAND_FIELD))?;
 
-                    if command_field == 0x0030 {
-                        // Handle C-ECHO-RQ
-                        let cecho_response = create_cecho_response(msgid);
-                        let mut cecho_data = Vec::new();
+                        if command_field == 0x0030 {
+                            // Handle C-ECHO-RQ
+                            let cecho_response = create_cecho_response(msgid);
+                            let mut cecho_data = Vec::new();
 
-                        cecho_response
-                            .write_dataset_with_ts(&mut cecho_data, &ts)
-                            .map_err(|_| CannotRespond("Could not write C-ECHO response object"))?;
+                            cecho_response
+                                .write_dataset_with_ts(&mut cecho_data, &ts)
+                                .map_err(|_| CannotRespond("Could not write C-ECHO response object"))?;
+
+                            let pdu_response = Pdu::PData {
+                                data: vec![dicom::ul::pdu::PDataValue {
+                                    presentation_context_id: data_value.presentation_context_id,
+                                    value_type: PDataValueType::Command,
+                                    is_last: true,
+                                    data: cecho_data,
+                                }],
+                            };
+                            association.send(&pdu_response).map_err(|_| {
+                                CannotRespond("failed to send C-ECHO response object to SCU")
+                            })?;
+                        } else {
+                            msgid = obj
+                                .element(tags::MESSAGE_ID)
+                                .map_err(|_| MissingTag(tags::MESSAGE_ID))?
+                                .to_int()
+                                .map_err(|_| InvalidNumber(tags::MESSAGE_ID))?;
+                            sop_class_uid = obj
+                                .element(tags::AFFECTED_SOP_CLASS_UID)
+                                .map_err(|_| MissingTag(tags::AFFECTED_SOP_CLASS_UID))?
+                                .to_str()
+                                .map_err(|_| CouldNotRetrieve(tags::AFFECTED_SOP_CLASS_UID))?
+                                .to_string();
+                            sop_instance_uid = obj
+                                .element(tags::AFFECTED_SOP_INSTANCE_UID)
+                                .map_err(|_| MissingTag(tags::AFFECTED_SOP_INSTANCE_UID))?
+                                .to_str()
+                                .map_err(|_| CouldNotRetrieve(tags::AFFECTED_SOP_INSTANCE_UID))?
+                                .to_string();
+                        }
+                        instance_buffer.clear();
+                    } else if data_value.value_type == PDataValueType::Data && data_value.is_last {
+                        instance_buffer.append(&mut data_value.data);
+
+                        let presentation_context = association
+                            .presentation_contexts()
+                            .iter()
+                            .find(|pc| pc.id == data_value.presentation_context_id)
+                            .ok_or(MissingPresentationContext)?;
+                        let ts = &presentation_context.transfer_syntax;
+
+                        let obj = InMemDicomObject::read_dataset_with_ts(
+                            instance_buffer.as_slice(),
+                            TransferSyntaxRegistry.get(ts).unwrap(),
+                        )
+                            .map_err(FailedToReadObject)?;
+                        let file_meta = FileMetaTableBuilder::new()
+                            .media_storage_sop_class_uid(
+                                obj.element(tags::SOP_CLASS_UID)
+                                    .map_err(|_| MissingTag(tags::SOP_CLASS_UID))?
+                                    .to_str()
+                                    .map_err(|_| CouldNotRetrieve(tags::SOP_CLASS_UID))?,
+                            )
+                            .media_storage_sop_instance_uid(
+                                obj.element(tags::SOP_INSTANCE_UID)
+                                    .map_err(|_| MissingTag(tags::SOP_INSTANCE_UID))?
+                                    .to_str()
+                                    .map_err(|_| CouldNotRetrieve(tags::SOP_INSTANCE_UID))?,
+                            )
+                            .transfer_syntax(ts)
+                            .build()
+                            .map_err(FailedToBuildMeta)?;
+
+                        // CALL TO ChRIS-RELATED CODE
+                        // --------------------------------------------------------------------------------
+                        let file_obj = obj.with_exact_meta(file_meta);
+                        channel
+                            .send(AssociationEvent::DicomInstance {
+                                ulid,
+                                dcm: file_obj,
+                            })
+                            .unwrap();
+                        // END OF ChRIS-RELATED CODE
+                        // --------------------------------------------------------------------------------
+
+                        // send C-STORE-RSP object
+                        // commands are always in implict VR LE
+                        let ts = dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
+
+                        let obj = create_cstore_response(msgid, &sop_class_uid, &sop_instance_uid);
+
+                        let mut obj_data = Vec::new();
+
+                        obj.write_dataset_with_ts(&mut obj_data, &ts)
+                            .map_err(|_| CannotRespond("could not write response object"))?;
 
                         let pdu_response = Pdu::PData {
                             data: vec![dicom::ul::pdu::PDataValue {
-                                presentation_context_id: data[0].presentation_context_id,
+                                presentation_context_id: data_value.presentation_context_id,
                                 value_type: PDataValueType::Command,
                                 is_last: true,
-                                data: cecho_data,
+                                data: obj_data,
                             }],
                         };
-                        association.send(&pdu_response).map_err(|_| {
-                            CannotRespond("failed to send C-ECHO response object to SCU")
-                        })?;
-                    } else {
-                        msgid = obj
-                            .element(tags::MESSAGE_ID)
-                            .map_err(|_| MissingTag(tags::MESSAGE_ID))?
-                            .to_int()
-                            .map_err(|_| InvalidNumber(tags::MESSAGE_ID))?;
-                        sop_class_uid = obj
-                            .element(tags::AFFECTED_SOP_CLASS_UID)
-                            .map_err(|_| MissingTag(tags::AFFECTED_SOP_CLASS_UID))?
-                            .to_str()
-                            .map_err(|_| CouldNotRetrieve(tags::AFFECTED_SOP_CLASS_UID))?
-                            .to_string();
-                        sop_instance_uid = obj
-                            .element(tags::AFFECTED_SOP_INSTANCE_UID)
-                            .map_err(|_| MissingTag(tags::AFFECTED_SOP_INSTANCE_UID))?
-                            .to_str()
-                            .map_err(|_| CouldNotRetrieve(tags::AFFECTED_SOP_INSTANCE_UID))?
-                            .to_string();
+                        association
+                            .send(&pdu_response)
+                            .map_err(|_| CannotRespond("failed to send response object to SCU"))?;
                     }
-                    instance_buffer.clear();
-                } else if data[0].value_type == PDataValueType::Data && data[0].is_last {
-                    instance_buffer.append(&mut data[0].data);
-
-                    let presentation_context = association
-                        .presentation_contexts()
-                        .iter()
-                        .find(|pc| pc.id == data[0].presentation_context_id)
-                        .ok_or(MissingPresentationContext)?;
-                    let ts = &presentation_context.transfer_syntax;
-
-                    let obj = InMemDicomObject::read_dataset_with_ts(
-                        instance_buffer.as_slice(),
-                        TransferSyntaxRegistry.get(ts).unwrap(),
-                    )
-                    .map_err(FailedToReadObject)?;
-                    let file_meta = FileMetaTableBuilder::new()
-                        .media_storage_sop_class_uid(
-                            obj.element(tags::SOP_CLASS_UID)
-                                .map_err(|_| MissingTag(tags::SOP_CLASS_UID))?
-                                .to_str()
-                                .map_err(|_| CouldNotRetrieve(tags::SOP_CLASS_UID))?,
-                        )
-                        .media_storage_sop_instance_uid(
-                            obj.element(tags::SOP_INSTANCE_UID)
-                                .map_err(|_| MissingTag(tags::SOP_INSTANCE_UID))?
-                                .to_str()
-                                .map_err(|_| CouldNotRetrieve(tags::SOP_INSTANCE_UID))?,
-                        )
-                        .transfer_syntax(ts)
-                        .build()
-                        .map_err(FailedToBuildMeta)?;
-
-                    // CALL TO ChRIS-RELATED CODE
-                    // --------------------------------------------------------------------------------
-                    let file_obj = obj.with_exact_meta(file_meta);
-                    channel
-                        .send(AssociationEvent::DicomInstance {
-                            uuid,
-                            dcm: file_obj,
-                        })
-                        .unwrap();
-                    // END OF ChRIS-RELATED CODE
-                    // --------------------------------------------------------------------------------
-
-                    // send C-STORE-RSP object
-                    // commands are always in implict VR LE
-                    let ts = dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
-
-                    let obj = create_cstore_response(msgid, &sop_class_uid, &sop_instance_uid);
-
-                    let mut obj_data = Vec::new();
-
-                    obj.write_dataset_with_ts(&mut obj_data, &ts)
-                        .map_err(|_| CannotRespond("could not write response object"))?;
-
-                    let pdu_response = Pdu::PData {
-                        data: vec![dicom::ul::pdu::PDataValue {
-                            presentation_context_id: data[0].presentation_context_id,
-                            value_type: PDataValueType::Command,
-                            is_last: true,
-                            data: obj_data,
-                        }],
-                    };
-                    association
-                        .send(&pdu_response)
-                        .map_err(|_| CannotRespond("failed to send response object to SCU"))?;
                 }
             }
             Pdu::ReleaseRQ => {
@@ -210,14 +212,25 @@ pub fn handle_association(
                     "Released association with {}",
                     association.client_ae_title()
                 );
+                break;
             }
             Pdu::AbortRQ { source } => {
+                tracing::warn!("Aborted connection from: {:?}", source);
                 return Err(Aborted(source));
             }
-            _ => return Err(UnhandledPdu(pdu.short_description())),
+            _ => return Err(UnhandledPdu(pdu.short_description().to_string())),
         }
     }
-    tracing::info!("Dropping connection with {}", association.client_ae_title());
+
+    if let Ok(peer_addr) = association.inner_stream().peer_addr() {
+        tracing::info!(
+            "Dropping connection with {} ({})",
+            association.client_ae_title(),
+            peer_addr
+        );
+    } else {
+        tracing::info!("Dropping connection with {}", association.client_ae_title());
+    }
     Ok(())
 }
 

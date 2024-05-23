@@ -1,29 +1,30 @@
-//! Initialize OpenTelemetry, then call [run_server_from_env].
+//! Initialize OpenTelemetry, then call [oxidicom::run_everything_from_env].
 
-use opentelemetry::global;
-use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry_sdk::trace::TracerProvider;
-
-use oxidicom::run_server_from_env;
-
-fn main() -> anyhow::Result<()> {
+#[tokio::main(flavor = "multi_thread")]
+async fn main() -> anyhow::Result<()> {
     init_tracing_subscriber().unwrap();
     init_otel_tracing().unwrap();
-    let result = run_server_from_env(None, None, None);
-    global::shutdown_tracer_provider();
+    let result = oxidicom::run_everything_from_env(None).await;
+    opentelemetry::global::shutdown_tracer_provider();
     result
 }
 
-fn init_otel_tracing() -> Result<(), opentelemetry::trace::TraceError> {
-    global::set_text_map_propagator(TraceContextPropagator::new());
-    let exporter = opentelemetry_otlp::new_exporter()
-        .http()
-        .build_span_exporter()?;
-    let provider = TracerProvider::builder()
-        .with_simple_exporter(exporter)
-        .build();
-    global::set_tracer_provider(provider);
-    Ok(())
+fn init_otel_tracing() -> Result<opentelemetry_sdk::trace::Tracer, opentelemetry::trace::TraceError>
+{
+    opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_exporter(opentelemetry_otlp::new_exporter().tonic())
+        .install_batch(opentelemetry_sdk::runtime::Tokio)
+    // TODO DELETE ME?
+    // global::set_text_map_propagator(TraceContextPropagator::new());
+    // let exporter = opentelemetry_otlp::new_exporter()
+    //     .http()
+    //     .build_span_exporter()?;
+    // let provider = TracerProvider::builder()
+    //     .with_simple_exporter(exporter)
+    //     .build();
+    // global::set_tracer_provider(provider);
+    // Ok(())
 }
 
 fn init_tracing_subscriber() -> Result<(), tracing::dispatcher::SetGlobalDefaultError> {

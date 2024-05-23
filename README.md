@@ -30,52 +30,26 @@ Now, _CUBE_ is the bottleneck. See the section on [Performance Tuning](#performa
 
 ## Environment Variables
 
-| Name                          | Description                                                                                             |
-|-------------------------------|---------------------------------------------------------------------------------------------------------|
-| `CHRIS_URL`                   | (required) CUBE `v1/api/` URL                                                                           |
-| `CHRIS_USERNAME`              | (required) Username of user to do PACSFile registration. Note: CUBE requires the username to be "chris" |
-| `CHRIS_PASSWORD`              | (required) User password                                                                                |
-| `CHRIS_FILES_ROOT`            | (required) Path to where _CUBE_'s storage is mounted                                                    |
-| `CHRIS_HTTP_RETRIES`          | Number of times to retry failed HTTP request to CUBE                                                    |
-| `CHRIS_SCP_AET`               | DICOM AE title (hospital PACS pushing to `oxidicom` should be configured to push to this name)          |
-| `CHRIS_SCP_STRICT`            | Whether receiving PDUs must not surpass the negotiated maximum PDU length.                              |
-| `CHRIS_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                      |
-| `CHRIS_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                       |                                                      
-| `CHRIS_PACS_ADDRESS`          | PACS server addresses (optional, see [PACS address configuration](#pacs-address-configuration))         |
-| `CHRIS_LISTENER_THREADS`      | Maximum number of concurrent SCU clients to handle. (see [Performance Tuning](#performance-tuning))     |
-| `CHRIS_PUSHER_THREADS`        | Maximum number of concurrent HTTP requests to _CUBE_. (see [Performance Tuning](#performance-tuning))   |
-| `CHRIS_VERBOSE`               | Set as `yes` to show debugging messages                                                                 |
-| `PORT`                        | TCP port number to listen on                                                                            |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry Collector HTTP endpoint                                                                   |
-| `OTEL_RESOURCE_ATTRIBUTES`    | Resource attributes, e.g. `service.name=oxidicom-test`                                                  |
+| Name                          | Description                                                                                         |
+|-------------------------------|-----------------------------------------------------------------------------------------------------|
+| `CHRIS_DB_CONNECTION`         | PostgreSQL connection string                                                                        |
+| `CHRIS_DB_POOL`               | Database connection pool size                                                                       |
+| `CHRIS_FILES_ROOT`            | (required) Path to where _CUBE_'s storage is mounted                                                |
+| `CHRIS_SCP_AET`               | DICOM AE title (hospital PACS pushing to `oxidicom` should be configured to push to this name)      |
+| `CHRIS_SCP_STRICT`            | Whether receiving PDUs must not surpass the negotiated maximum PDU length.                          |
+| `CHRIS_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                  |
+| `CHRIS_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                   |                                                      
+| `CHRIS_PACS_ADDRESS`          | PACS server addresses (optional, see [PACS address configuration](#pacs-address-configuration))     |
+| `CHRIS_LISTENER_THREADS`      | Maximum number of concurrent SCU clients to handle. (see [Performance Tuning](#performance-tuning)) |
+| `TOKIO_WORKER_THREADS`        | Number of threads to use for the async runtime                                                      |
+| `CHRIS_VERBOSE`               | Set as `yes` to show debugging messages                                                             |
+| `PORT`                        | TCP port number to listen on                                                                        |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry Collector gRPC endpoint                                                               |
+| `OTEL_RESOURCE_ATTRIBUTES`    | Resource attributes, e.g. `service.name=oxidicom-test`                                              |
 
 ## Performance Tuning
 
-Internally, `oxidicom` runs two thread pools:
-
-- "Listener" receives DICOM instance files over a TCP port
-- "Pusher" pushes received DICOM files to CUBE
-
-The number of threads to use for the "listener" and "pusher" components are configured by
-`CHRIS_LISTENER_THREADS` and `CHRIS_PUSHER_THREADS` respectively.
-
-<details>
-<summary>
-Resource usage, and on the choice of an in-memory queue
-</summary>
-
-In an older version of `oxidicom`, "listening" and "pushing" were synchronous.
-With 16 threads, the resource usage of `oxidicom` would not exceed 0.5 CPU and
-1.5 GiB. Meanwhile, _CUBE_ struggled to keep up with the requests being made by
-`oxidicom` even with a CPU limit of 12. https://github.com/FNNDSC/ChRIS_ultron_backEnd/issues/546
-
-Thus, the "listener" and "pusher" activities were decoupled and handled by separate thread pools,
-which communicate over an internal [mpsc channel](https://doc.rust-lang.org/std/sync/mpsc/).
-It would be more "cloud-native" for the "listener" and "pusher" activities to live in separate
-microservices which communicate over RabbitMQ. However, we'll have to scale up _CUBE_ by 20 time
-before needing to scale `oxidicom`, so who cares ¯\\\_(ツ)\_/¯
-
-</details>
+TODO
 
 ## Failure Modes
 
@@ -160,5 +134,4 @@ OpenTelemetry collector. They are primarily for debugging.
 
 ### Sample DICOM files
 
-- https://talk.openmrs.org/t/sources-for-sample-dicom-images/6019
-- https://support.dcmtk.org/redmine/projects/dcmtk/wiki/DICOM_images
+See https://github.com/FNNDSC/sample_dicom_downloader

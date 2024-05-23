@@ -9,7 +9,6 @@
 //! https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/pypx/register.py#L459-L465
 #![allow(non_snake_case)]
 
-use std::cell::OnceCell;
 use std::fmt::Display;
 
 use crate::dicomrs_options::ClientAETitle;
