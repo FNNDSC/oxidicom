@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 
-use ulid::Ulid;
 use crate::dicomrs_options::ClientAETitle;
 use crate::pacs_file::PacsFileRegistrationRequest;
+use ulid::Ulid;
 
 /// The set of fields of a [PacsFileRegistrationRequest] which uniquely identifies a DICOM series
 /// in CUBE.

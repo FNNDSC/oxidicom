@@ -49,7 +49,7 @@ pub fn handle_association(
         .send(AssociationEvent::Start {
             ulid,
             aet: aet.clone(),
-            aec,
+            aec: aec.clone(),
             pacs_address,
         })
         .unwrap();
@@ -77,9 +77,11 @@ pub fn handle_association(
                 for data_value in data {
                     if data_value.value_type == PDataValueType::Data && !data_value.is_last {
                         instance_buffer.append(&mut data_value.data);
-                    } else if data_value.value_type == PDataValueType::Command && data_value.is_last {
+                    } else if data_value.value_type == PDataValueType::Command && data_value.is_last
+                    {
                         // commands are always in implict VR LE
-                        let ts = dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
+                        let ts =
+                            dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
                         let data_value = &data_value;
                         let v = &data_value.data;
 
@@ -98,7 +100,9 @@ pub fn handle_association(
 
                             cecho_response
                                 .write_dataset_with_ts(&mut cecho_data, &ts)
-                                .map_err(|_| CannotRespond("Could not write C-ECHO response object"))?;
+                                .map_err(|_| {
+                                    CannotRespond("Could not write C-ECHO response object")
+                                })?;
 
                             let pdu_response = Pdu::PData {
                                 data: vec![dicom::ul::pdu::PDataValue {
@@ -145,7 +149,7 @@ pub fn handle_association(
                             instance_buffer.as_slice(),
                             TransferSyntaxRegistry.get(ts).unwrap(),
                         )
-                            .map_err(FailedToReadObject)?;
+                        .map_err(FailedToReadObject)?;
                         let file_meta = FileMetaTableBuilder::new()
                             .media_storage_sop_class_uid(
                                 obj.element(tags::SOP_CLASS_UID)
@@ -169,6 +173,9 @@ pub fn handle_association(
                         channel
                             .send(AssociationEvent::DicomInstance {
                                 ulid,
+                                // annoying note to self: sending aec.clone() through the channel
+                                // makes the code easier, even though it's slightly bad API design.
+                                aec: aec.clone(),
                                 dcm: file_obj,
                             })
                             .unwrap();
@@ -177,7 +184,8 @@ pub fn handle_association(
 
                         // send C-STORE-RSP object
                         // commands are always in implict VR LE
-                        let ts = dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
+                        let ts =
+                            dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
                         let obj = create_cstore_response(msgid, &sop_class_uid, &sop_instance_uid);
 

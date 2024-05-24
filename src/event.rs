@@ -17,7 +17,14 @@ pub(crate) enum AssociationEvent {
         pacs_address: Option<String>,
     },
     /// Received a DICOM file.
-    DicomInstance { ulid: Ulid, dcm: DefaultDicomObject },
+    DicomInstance {
+        /// UUID uniquely identifying the TCP connection instance
+        ulid: Ulid,
+        /// AE title of the client sending us DICOMs
+        aec: ClientAETitle,
+        /// DICOM data
+        dcm: DefaultDicomObject,
+    },
     /// No more DICOM files will be received for this association.
     Finish { ulid: Ulid, ok: bool },
 }

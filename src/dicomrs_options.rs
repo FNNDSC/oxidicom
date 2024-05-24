@@ -19,7 +19,7 @@ pub struct DicomRsConfig {
     pub strict: bool,
     pub uncompressed_only: bool,
     /// Whether to accept unknown abstract syntaxes.
-    pub promiscuous: bool
+    pub promiscuous: bool,
 }
 
 impl<'a> Into<ServerAssociationOptions<'a, AcceptAny>> for DicomRsConfig {

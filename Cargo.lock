@@ -1774,23 +1774,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1869fb4bb9b35c5ba8a1e40c9b128a7b4c010d07091e864a29da19e4fe2ca4d7"
 
 [[package]]
-name = "opentelemetry-stdout"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6d080bf06af02b738feb2e6830cf72c30b76ca18b40f555cdf1b53e7b491bfe"
-dependencies = [
- "async-trait",
- "chrono",
- "futures-util",
- "opentelemetry",
- "opentelemetry_sdk",
- "ordered-float",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
 name = "opentelemetry_sdk"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1800,14 +1783,12 @@ dependencies = [
  "futures-channel",
  "futures-executor",
  "futures-util",
- "glob",
  "lazy_static",
  "once_cell",
  "opentelemetry",
  "ordered-float",
  "percent-encoding",
  "rand",
- "serde_json",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -1852,7 +1833,6 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
- "opentelemetry-stdout",
  "opentelemetry_sdk",
  "regex",
  "rstest",
@@ -1863,6 +1843,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
+ "tokio-stream",
  "tracing",
  "tracing-subscriber",
  "ulid",
@@ -3062,9 +3043,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-stream"
-version = "0.1.14"
+version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "397c988d37662c7dda6d2208364a706264bf3d6138b11d436cbac0ad38832842"
+checksum = "267ac89e0bec6e691e5813911606935d77c476ff49024f98abcea3e7b15e37af"
 dependencies = [
  "futures-core",
  "pin-project-lite",
@@ -3073,16 +3054,15 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.10"
+version = "0.7.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5419f34732d9eb6ee4c3578b7989078579b7f039cbbb9ca2c4da015749371e15"
+checksum = "9cf6b47b3771c49ac75ad09a6162f53ad4b8088b76ac60e8ec1455b31a189fe1"
 dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
  "pin-project-lite",
  "tokio",
- "tracing",
 ]
 
 [[package]]

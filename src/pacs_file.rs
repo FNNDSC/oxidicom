@@ -15,9 +15,28 @@ use crate::dicomrs_options::ClientAETitle;
 use dicom::dictionary_std::tags;
 use dicom::object::{DefaultDicomObject, Tag};
 
-use crate::error::{name_of, RequiredTagError};
+use crate::error::{name_of, DicomRequiredTagError, RequiredTagError};
 use crate::patient_age::parse_age;
 use crate::sanitize::sanitize_path;
+
+/// A wrapper of [PacsFileRegistrationRequest] along with the [DefaultDicomObject] it was created from.
+pub struct PacsFileRegistration {
+    pub request: PacsFileRegistrationRequest,
+    pub obj: DefaultDicomObject,
+}
+
+impl PacsFileRegistration {
+    /// Wraps [PacsFileRegistrationRequest::new].
+    pub(crate) fn new(
+        pacs_name: ClientAETitle,
+        obj: DefaultDicomObject,
+    ) -> Result<(Self, Vec<BadTag>), DicomRequiredTagError> {
+        match PacsFileRegistrationRequest::new(pacs_name, &obj) {
+            Ok((request, bad_tags)) => Ok((Self { request, obj }, bad_tags)),
+            Err(error) => Err(DicomRequiredTagError { obj, error }),
+        }
+    }
+}
 
 /// Data necessary to register a DICOM file to CUBE's database in the `pacsfiles_pacsfile` table.
 ///
@@ -189,28 +208,4 @@ impl Display for MaybeU32 {
 /// Produces the hash of the data as a hexidecimal string.
 fn hash(data: &str) -> String {
     format!("{:x}", seahash::hash(data.as_bytes()))
-}
-
-#[derive(Debug, serde::Deserialize)]
-pub struct PacsFileResponse {
-    pub url: String,
-    pub id: u32,
-    pub creation_date: String,
-    pub fname: String,
-    pub fsize: u32,
-
-    pub PatientID: String,
-    pub PatientBirthDate: Option<String>,
-    pub PatientAge: Option<u32>,
-    pub PatientSex: Option<String>,
-    pub StudyDate: String,
-
-    pub AccessionNumber: Option<String>,
-    pub Modality: Option<String>,
-    pub ProtocolName: Option<String>,
-    pub StudyInstanceUID: String,
-    pub SeriesInstanceUID: String,
-    pub SeriesDescription: Option<String>,
-    pub pacs_identifier: String,
-    pub file_resource: String,
 }

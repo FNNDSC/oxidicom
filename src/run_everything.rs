@@ -1,10 +1,11 @@
 use crate::dicomrs_options::ClientAETitle;
+use crate::listener_tcp_loop::dicom_listener_tcp_loop;
+use crate::writer::dicom_storage_writer;
 use crate::DicomRsConfig;
+use camino::Utf8PathBuf;
 use std::collections::HashMap;
 use std::net::SocketAddrV4;
 use tokio::sync::mpsc;
-use crate::listener_tcp_loop::dicom_listener_tcp_loop;
-use crate::writer::dicom_storage_writer;
 
 /// Runs everything:
 ///
@@ -18,18 +19,21 @@ pub async fn run_everything(
     max_pdu_length: usize,
     finite_connections: Option<usize>,
     listener_threads: usize,
+    files_root: Utf8PathBuf,
 ) -> anyhow::Result<()> {
     let (tx_dcm, rx_dcm) = mpsc::unbounded_channel();
-    let listener = tokio::task::spawn_blocking(move || dicom_listener_tcp_loop(
-        address,
-        dicomrs_config,
-        finite_connections,
-        listener_threads,
-        max_pdu_length,
-        tx_dcm,
-        pacs_addresses
-    ));
-    let storage_writer = tokio::spawn(dicom_storage_writer(rx_dcm));
+    let listener = tokio::task::spawn_blocking(move || {
+        dicom_listener_tcp_loop(
+            address,
+            dicomrs_config,
+            finite_connections,
+            listener_threads,
+            max_pdu_length,
+            tx_dcm,
+            pacs_addresses,
+        )
+    });
+    let storage_writer = tokio::spawn(dicom_storage_writer(rx_dcm, files_root));
     let (r0, r1) = tokio::try_join!(listener, storage_writer)?;
     r0.and(r1)
 }

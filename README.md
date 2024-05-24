@@ -122,15 +122,12 @@ The `just` command, without arguments, will:
 ### Observability
 
 `oxidicom` exports traces to OpenTelemetry collector. There is a span for the association
-(TCP connection from PACS server to send us DICOM objects) and a span for each file registration
-to CUBE.
+(TCP connection from PACS server to send us DICOM objects).
 
 ### Usage of `opentelemetry` v.s. `tracing` in the codebase
 
 `dicom-rs` itself uses the `tracing` crate, though for the spans described above,
-I decided to use the `opentelemetry` crate. However, I am also using the `tracing`
-crate as well. Log messages created by `tracing` _do not_ get exported to the
-OpenTelemetry collector. They are primarily for debugging.
+I decided to use the `opentelemetry` crate.
 
 ### Sample DICOM files
 

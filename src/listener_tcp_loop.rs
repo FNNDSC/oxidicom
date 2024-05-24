@@ -68,20 +68,14 @@ pub fn dicom_listener_tcp_loop(
                     ) {
                         Ok(..) => {
                             handler
-                                .send(AssociationEvent::Finish {
-                                    ulid,
-                                    ok: true,
-                                })
+                                .send(AssociationEvent::Finish { ulid, ok: true })
                                 .unwrap();
                             context.span().set_status(Status::Ok)
                         }
                         Err(e) => {
                             tracing::error!("{:?}", e);
                             handler
-                                .send(AssociationEvent::Finish {
-                                    ulid,
-                                    ok: false,
-                                })
+                                .send(AssociationEvent::Finish { ulid, ok: false })
                                 .unwrap();
                             context.span().set_status(Status::error(e.to_string()))
                         }
@@ -94,7 +88,6 @@ pub fn dicom_listener_tcp_loop(
     pool.shutdown();
     Ok(())
 }
-
 
 // /// Start listening for DICOM instances.
 // ///
