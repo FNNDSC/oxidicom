@@ -20,4 +20,4 @@ else
 fi
 
 export GID=$(id -g)
-exec docker compose --profile oxidicom run --use-aliases $notty oxidicom "$@"
+exec docker compose --profile oxidicom run --rm --use-aliases $notty oxidicom "$@"

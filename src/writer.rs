@@ -90,6 +90,9 @@ fn write_dicom<P: AsRef<Utf8Path>>(
     files_root: P,
 ) -> Result<Utf8PathBuf, DicomStorageError> {
     let output_path = files_root.as_ref().join(&dcm.request.path);
+    if let Some(parent_dir) = output_path.parent() {
+        fs_err::create_dir_all(parent_dir)?;
+    }
     dcm.obj.write_to_file(&output_path)?;
     Ok(output_path)
 }
