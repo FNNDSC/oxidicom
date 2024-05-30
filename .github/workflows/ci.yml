@@ -98,7 +98,9 @@ jobs:
         run: |
           ip_address_with_subnet=$(docker network inspect minichris-local --format '{{ range .Containers }}{{ if (eq .Name "minichris-docker-db-1") }}{{ .IPv4Address }}{{ end }}{{ end }}')
           ip_address="${ip_address_with_subnet%/*}"
-          echo "DATABASE_URL=postgresql://chris:chris1234@$ip_address:5432/chris" >> "$GITHUB_OUTPUT"
+          database_url="postgresql://chris:chris1234@$ip_address:5432/chris"
+          docker run --rm --network minichris-local docker.io/library/postgres:16 psql "$database_url" -c 'SELECT 1 + 1'
+          echo "DATABASE_URL=" >> "$GITHUB_OUTPUT"
       - name: Build image
         uses: docker/build-push-action@v5
         id: docker_build
