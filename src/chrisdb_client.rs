@@ -490,9 +490,9 @@ mod tests {
     async fn pretend_to_receive_dicom_files(
         requests: impl IntoIterator<Item = &PacsFileRegistrationRequest>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let root = std::env::var("CHRIS_FILES_ROOT")
+        let root = std::env::var("OXIDICOM_FILES_ROOT")
             .map(PathBuf::from)
-            .expect("The environment variable CHRIS_FILES_ROOT must be set.");
+            .expect("The environment variable OXIDICOM_FILES_ROOT must be set.");
         futures::stream::iter(requests.into_iter())
             .map(|req| root.join(&req.path))
             .map(Ok)
