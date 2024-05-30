@@ -101,14 +101,10 @@ fn register_task(
         let result = client.register(files).await;
         match &result {
             Ok(_) => {
-                tracing::info!(
-                    task = "register",
-                    message = "registered {} files successfully",
-                    n_files
-                );
+                tracing::info!(task = "register", count = n_files);
             }
             Err(e) => {
-                tracing::error!(task = "register", error = e.to_string(),);
+                tracing::error!(task = "register", error = e.to_string());
             }
         }
         result
