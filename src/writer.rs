@@ -3,7 +3,7 @@ use dicom::object::DefaultDicomObject;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::dicomrs_options::ClientAETitle;
+use crate::dicomrs_settings::ClientAETitle;
 use crate::error::{DicomStorageError, HandleLoopError};
 use crate::event::AssociationEvent;
 use crate::pacs_file::{PacsFileRegistration, PacsFileRegistrationRequest};

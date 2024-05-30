@@ -3,7 +3,7 @@
 //! Mostly based on
 //! https://github.com/Enet4/dicom-rs/tree/7c0e5ab895e2f57c432cece41077f13abd4d7f71/findscu
 
-use crate::dicomrs_options::{ClientAETitle, OurAETitle};
+use crate::dicomrs_settings::{ClientAETitle, OurAETitle};
 use anyhow::{bail, Context};
 use dicom::core::{DataElement, PrimitiveValue, VR};
 use dicom::dicom_value;

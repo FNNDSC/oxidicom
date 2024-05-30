@@ -1,5 +1,7 @@
-use chris::ChrisClient;
 use chris::types::{CubeUrl, Username};
+use chris::ChrisClient;
+use figment::providers::Env;
+use figment::Figment;
 
 use crate::{CALLED_AE_TITLE, EXAMPLE_SERIES_INSTANCE_UIDS};
 
@@ -75,14 +77,26 @@ pub async fn run_assertions(expected_counts: &[usize]) {
 }
 
 async fn get_client_from_env() -> ChrisClient {
-    let cube_url = CubeUrl::new(envmnt::get_or_panic("OXIDICOM_TEST_URL")).unwrap();
-    let username = Username::new(envmnt::get_or_panic("OXIDICOM_TEST_USERNAME"));
-    let password = envmnt::get_or_panic("OXIDICOM_TEST_PASSWORD");
-    let account = chris::Account::new(&cube_url, &username, &password);
+    let TestSettings {
+        url,
+        username,
+        password,
+    } = Figment::from(Env::prefixed("OXIDICOM_TEST_"))
+        .extract()
+        .unwrap();
+
+    let account = chris::Account::new(&url, &username, &password);
     let token = account.get_token().await.unwrap();
-    ChrisClient::build(cube_url, username, token)
+    ChrisClient::build(url, username, token)
         .unwrap()
         .connect()
         .await
         .unwrap()
+}
+
+#[derive(serde::Deserialize)]
+struct TestSettings {
+    url: CubeUrl,
+    username: Username,
+    password: String,
 }

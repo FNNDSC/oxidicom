@@ -21,7 +21,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use ulid::Ulid;
 
 use crate::association_error::{AssociationError, AssociationError::*};
-use crate::dicomrs_options::{ClientAETitle, OurAETitle};
+use crate::dicomrs_settings::{ClientAETitle, OurAETitle};
 use crate::event::AssociationEvent;
 
 /// Handle an "association" from an "SCU" (i.e. handle when someone is trying to give us DICOM files).

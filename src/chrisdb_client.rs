@@ -252,13 +252,14 @@ async fn query_for_existing(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dicomrs_options::ClientAETitle;
+    use crate::dicomrs_settings::ClientAETitle;
     use chris::{search::GetOnlyError, ChrisClient};
     use futures::prelude::*;
     use rstest::*;
     use sqlx::postgres::PgPoolOptions;
     use std::collections::HashSet;
     use std::path::PathBuf;
+    use figment::Figment;
 
     #[fixture]
     fn pool() -> sqlx::PgPool {
@@ -273,19 +274,16 @@ mod tests {
 
     #[fixture]
     #[once]
-    fn env_config() -> config::Config {
-        config::Config::builder()
-            .add_source(config::Environment::with_prefix("OXIDICOM_TEST").separator("_"))
-            .build()
-            .unwrap()
+    fn env_config() -> Figment {
+        Figment::from(figment::providers::Env::prefixed("OXIDICOM_TEST_"))
     }
 
     #[fixture]
-    fn chris_client(env_config: &config::Config) -> ChrisClient {
+    fn chris_client(env_config: &Figment) -> ChrisClient {
         futures::executor::block_on(async {
-            let cube_url = env_config.get("URL").unwrap();
-            let username = env_config.get("USERNAME").unwrap();
-            let password = env_config.get_string("PASSWORD").unwrap();
+            let cube_url = env_config.extract_inner("url").unwrap();
+            let username = env_config.extract_inner("username").unwrap();
+            let password: String = env_config.extract_inner("password").unwrap();
             let account = chris::Account::new(&cube_url, &username, &password);
             let token = account.get_token().await.unwrap();
             ChrisClient::build(cube_url, username, token)

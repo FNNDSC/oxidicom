@@ -1,5 +1,7 @@
 //! Initialize OpenTelemetry, then call [oxidicom::run_everything_from_env].
 
+use oxidicom::get_config;
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     init_tracing_subscriber().unwrap();
@@ -28,9 +30,7 @@ fn init_otel_tracing() -> Result<opentelemetry_sdk::trace::Tracer, opentelemetry
 }
 
 fn init_tracing_subscriber() -> Result<(), tracing::dispatcher::SetGlobalDefaultError> {
-    // TODO replace with config::Config
-    let verbose_option = envmnt::get_or("CHRIS_VERBOSE", "").to_lowercase();
-    let level = if verbose_option.starts_with("y") || &verbose_option == "true" {
+    let level = if get_config().extract_inner_lossy("verbose").unwrap_or(false) {
         tracing::Level::INFO
     } else {
         tracing::Level::WARN

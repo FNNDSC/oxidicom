@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use crate::dicomrs_options::ClientAETitle;
+use crate::dicomrs_settings::ClientAETitle;
 use crate::pacs_file::PacsFileRegistrationRequest;
 use ulid::Ulid;
 

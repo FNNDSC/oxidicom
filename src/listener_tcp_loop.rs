@@ -1,4 +1,4 @@
-use crate::dicomrs_options::{ClientAETitle, DicomRsConfig};
+use crate::dicomrs_settings::{ClientAETitle, DicomRsSettings};
 use crate::event::AssociationEvent;
 use crate::scp::handle_association;
 use crate::thread_pool::ThreadPool;
@@ -16,13 +16,12 @@ use tokio::sync::mpsc::UnboundedSender;
 /// objects through the given `handler`.
 pub fn dicom_listener_tcp_loop(
     address: SocketAddrV4,
-    config: DicomRsConfig,
+    config: DicomRsSettings,
     finite_connections: Option<usize>,
     n_threads: usize,
     max_pdu_length: usize,
     handler: UnboundedSender<AssociationEvent>,
     pacs_addresses: HashMap<ClientAETitle, String>,
-    // on_start: Option<dyn Fn() -> ()>
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(address)?;
     tracing::info!("listening on: tcp://{}", address);
@@ -89,67 +88,3 @@ pub fn dicom_listener_tcp_loop(
     pool.shutdown();
     Ok(())
 }
-
-// /// Start listening for DICOM instances.
-// ///
-// /// This function creates 2 thread pools:
-// ///
-// /// - Receive DICOM files from a TCP port over the DIMSE C-STORE protocol
-// /// - Push DICOM files to _CUBE_
-// ///
-// /// `finite_connections` is a variable only used for testing. It tells the server to exit
-// /// after a finite number of connections, or on the first error.
-// pub fn run_dicom_listener(
-//     address: SocketAddrV4,
-//     config: DicomRsConfig,
-//     pacs_addresses: HashMap<ClientAETitle, String>,
-//     max_pdu_length: usize,
-//     finite_connections: Option<usize>,
-//     listener_threads: usize,
-//     pusher_threads: usize,
-// ) -> anyhow::Result<()> {
-//     let (rx, tx) = mpsc::channel();
-//     let pusher = thread::spawn(move || run_chris_pusher(chris, tx, pusher_threads));
-//     let listener = thread::spawn(move || {
-//         dicom_listener_tcp_loop(
-//             address,
-//             config,
-//             finite_connections,
-//             listener_threads,
-//             max_pdu_length,
-//             rx,
-//             pacs_addresses,
-//         )
-//     });
-//     listener.join().unwrap()?;
-//     pusher.join().unwrap()
-// }
-//
-// /// Wait for received DICOM instances. For each DICOM instance file, push and register it to _CUBE_.
-// fn run_chris_pusher(
-//     client: CubePacsStorageClient,
-//     incoming: Receiver<AssociationEvent>,
-//     n_threads: usize,
-// ) -> anyhow::Result<()> {
-//     let mut pool = ThreadPool::new(n_threads, "cube_pusher");
-//     let sender = ChrisSender::new(client);
-//     let had_error = Arc::new(Mutex::new(false));
-//     while let Ok(event) = incoming.recv() {
-//         let jobs = sender.prepare_jobs_for(event);
-//         for job in jobs {
-//             let has_error = Arc::clone(&had_error);
-//             pool.execute(move || {
-//                 if let Err(e) = job.run() {
-//                     tracing::error!("{}", e.to_string());
-//                     *has_error.lock().unwrap() = true;
-//                 }
-//             });
-//         }
-//     }
-//     pool.shutdown();
-//     if Arc::into_inner(had_error).unwrap().into_inner().unwrap() {
-//         anyhow::bail!("Some pushes to CUBE were unsuccessful")
-//     } else {
-//         Ok(())
-//     }
-// }

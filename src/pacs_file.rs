@@ -11,7 +11,7 @@
 
 use std::fmt::Display;
 
-use crate::dicomrs_options::ClientAETitle;
+use crate::dicomrs_settings::ClientAETitle;
 use dicom::dictionary_std::tags;
 use dicom::object::{DefaultDicomObject, Tag};
 

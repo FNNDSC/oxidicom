@@ -45,15 +45,26 @@ The other variables are either for optional features or performance tuning.
 | `OXIDICOM_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                   |                                                      
 | `OXIDICOM_PACS_ADDRESS`          | PACS server addresses (optional, see [PACS address configuration](#pacs-address-configuration))     |
 | `OXIDICOM_LISTENER_THREADS`      | Maximum number of concurrent SCU clients to handle. (see [Performance Tuning](#performance-tuning)) |
-| `OXIDICOM_PORT`                  | TCP port number to listen on                                                                        |
+| `OXIDICOM_LISTENER_PORT`         | TCP port number to listen on                                                                        |
 | `OXIDICOM_VERBOSE`               | Set as `yes` to show debugging messages                                                             |
 | `TOKIO_WORKER_THREADS`           | Number of threads to use for the async runtime                                                      |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`    | OpenTelemetry Collector gRPC endpoint                                                               |
 | `OTEL_RESOURCE_ATTRIBUTES`       | Resource attributes, e.g. `service.name=oxidicom-test`                                              |
 
+See [src/settings.rs](src/settings.rs) for the source of truth on the table above and default values of optional settings.
+
 ## Performance Tuning
 
-TODO
+Behind the scenes, _oxidicom_ has three components connected by asynchronous channels:
+
+1. listener: receives DICOM objects over TCP
+2. writer: writes DICOM objects to storage
+3. registerer: writes DICOM metadata to CUBE's database
+
+`OXIDICOM_LISTENER_THREADS` controls the parallelism of the listener, whereas
+`TOKIO_WORKER_THREADS` controls the async runtime's thread pool which is shared
+between the writer and registerer. (The reason why we have two thread pools is
+an implementation detail: the Rust ecosystem suffers from a sync/async divide.)
 
 ## Failure Modes
 
@@ -87,11 +98,11 @@ under the space `SERVICES/PACS/org.fnndsc.oxidicom`. See [CUSTOM_SPEC.md](./CUST
 
 ## PACS Address Configuration
 
-The environment variable `OXIDICOM_PACS_ADDRESS` should be a comma-separated list of `key=value` pairs.
-Blanks will be ignored (which implies that trailing comma is OK).
+The environment variable `OXIDICOM_PACS_ADDRESS` should be a dictionary of AE titles to their IPv4 sockets
+(IP address and port number).
 
 The PACS server address for a client AE title is used to lookup the `NumberOfSeriesRelatedInstances`.
-For example, suppose `OXIDICOM_PACS_ADDRESS=BCH=1.2.3.4:4242`. When we receive DICOMs from `BCH`, `oxidicom`
+For example, suppose `OXIDICOM_PACS_ADDRESS={BCH="1.2.3.4:4242"}`. When we receive DICOMs from `BCH`, `oxidicom`
 will do a C-FIND to `1.2.3.4:4242`, asking them what is the `NumberOfSeriesRelatedInstances` for the
 received DICOMs. When we receive DICOMs from `MGH`, the PACS address is unknown, so `oxidicom` will set
 `NumberOfSeriesRelatedInstances=unknown`.
