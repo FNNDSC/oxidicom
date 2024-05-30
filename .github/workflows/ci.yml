@@ -90,6 +90,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Get database IP
+        id: read-network
+        # sqlx crate needs the environment variable DATABASE_URL to be set for compile-time validation of SQL commands.
+        # For unknown reasons, docker container service name DNS doesn't work inside the build, so we need to get the
+        # database container's IP address.
+        run: |
+          ip_address_with_subnet=$(docker network inspect minichris-local --format '{{ range .Containers }}{{ if (eq .Name "minichris-docker-db-1") }}{{ .IPv4Address }}{{ end }}{{ end }}')
+          ip_address="${ip_address%/*}"
+          echo "DATABASE_URL=postgresql://chris:chris1234@$ip_address:5432/chris" >> "$GITHUB_OUTPUT"
       - name: Build image
         uses: docker/build-push-action@v5
         id: docker_build
@@ -98,3 +107,4 @@ jobs:
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: DATABASE_URL=${{ steps.read-network.outputs.DATABASE_URL }}
