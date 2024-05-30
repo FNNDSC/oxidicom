@@ -33,7 +33,7 @@ jobs:
     - name: Download example data
       run: docker compose up get-data
     - name: Compile test binary
-      run: just test -- --no-run
+      run: just test --no-run
     - name: Integration test
       run: just test
   build:
