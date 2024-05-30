@@ -108,7 +108,7 @@ jobs:
         id: docker_build
         with:
           tags: ${{ steps.info.outputs.tags_csv }}
-          push: true
+          push: ${{ steps.dockerhub_login.outcome == 'success' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: DATABASE_URL=${{ steps.read-network.outputs.DATABASE_URL }}
