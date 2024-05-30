@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry::{Array, Context, KeyValue, StringValue, Value};
@@ -11,8 +11,6 @@ use crate::pacs_file::PacsFileRegistrationRequest;
 pub(crate) struct CubePostgresClient {
     /// PostgreSQL database client
     pool: sqlx::PgPool,
-    /// The pacsfiles_pacs table, which maps string PACS names to integer IDs
-    pacs: HashMap<String, u32>,
     /// Timezone for the "creation_date" field.
     tz: Option<UtcOffset>,
 }
@@ -34,11 +32,7 @@ pub enum PacsFileDatabaseError {
 impl CubePostgresClient {
     /// Constructor
     pub fn new(pool: sqlx::PgPool, tz: Option<UtcOffset>) -> Self {
-        Self {
-            pool,
-            pacs: Default::default(),
-            tz,
-        }
+        Self { pool, tz }
     }
 
     /// Register DICOM file metadata to CUBE's database. Any files which already exist
@@ -46,13 +40,13 @@ impl CubePostgresClient {
     ///
     /// The SQL transaction will be committed if-*and-only-if* the INSERT is successful
     /// and the number of rows affected is expected.
-    pub async fn register(
+    pub async fn register<F: AsRef<[PacsFileRegistrationRequest]>>(
         &self,
-        files: &[PacsFileRegistrationRequest],
+        files: F,
     ) -> Result<(), PacsFileDatabaseError> {
         let mut transaction = self.pool.begin().await?;
         let unregistered_files =
-            warn_and_remove_already_registered(&mut transaction, files).await?;
+            warn_and_remove_already_registered(&mut transaction, files.as_ref()).await?;
         let (count, rows_affected) =
             insert_into_pacsfile(&mut transaction, unregistered_files, self.get_now()).await?;
         if count == rows_affected {
@@ -259,11 +253,7 @@ async fn query_for_existing(
 mod tests {
     use super::*;
     use crate::dicomrs_options::ClientAETitle;
-    use chris::search::GetOnlyError;
-    use chris::{
-        types::{CubeUrl, Username},
-        ChrisClient,
-    };
+    use chris::{search::GetOnlyError, ChrisClient};
     use futures::prelude::*;
     use rstest::*;
     use sqlx::postgres::PgPoolOptions;
@@ -282,11 +272,20 @@ mod tests {
     }
 
     #[fixture]
-    fn chris_client() -> ChrisClient {
+    #[once]
+    fn env_config() -> config::Config {
+        config::Config::builder()
+            .add_source(config::Environment::with_prefix("OXIDICOM_TEST").separator("_"))
+            .build()
+            .unwrap()
+    }
+
+    #[fixture]
+    fn chris_client(env_config: &config::Config) -> ChrisClient {
         futures::executor::block_on(async {
-            let cube_url = CubeUrl::new(envmnt::get_or_panic("CHRIS_URL")).unwrap();
-            let username = Username::new(envmnt::get_or_panic("CHRIS_USERNAME"));
-            let password = envmnt::get_or_panic("CHRIS_PASSWORD");
+            let cube_url = env_config.get("URL").unwrap();
+            let username = env_config.get("USERNAME").unwrap();
+            let password = env_config.get_string("PASSWORD").unwrap();
             let account = chris::Account::new(&cube_url, &username, &password);
             let token = account.get_token().await.unwrap();
             ChrisClient::build(cube_url, username, token)

@@ -22,6 +22,7 @@ pub fn dicom_listener_tcp_loop(
     max_pdu_length: usize,
     handler: UnboundedSender<AssociationEvent>,
     pacs_addresses: HashMap<ClientAETitle, String>,
+    // on_start: Option<dyn Fn() -> ()>
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(address)?;
     tracing::info!("listening on: tcp://{}", address);

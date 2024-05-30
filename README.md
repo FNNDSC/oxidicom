@@ -30,22 +30,26 @@ Now, _CUBE_ is the bottleneck. See the section on [Performance Tuning](#performa
 
 ## Environment Variables
 
-| Name                          | Description                                                                                         |
-|-------------------------------|-----------------------------------------------------------------------------------------------------|
-| `CHRIS_DB_CONNECTION`         | PostgreSQL connection string                                                                        |
-| `CHRIS_DB_POOL`               | Database connection pool size                                                                       |
-| `CHRIS_FILES_ROOT`            | (required) Path to where _CUBE_'s storage is mounted                                                |
-| `CHRIS_SCP_AET`               | DICOM AE title (hospital PACS pushing to `oxidicom` should be configured to push to this name)      |
-| `CHRIS_SCP_STRICT`            | Whether receiving PDUs must not surpass the negotiated maximum PDU length.                          |
-| `CHRIS_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                  |
-| `CHRIS_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                   |                                                      
-| `CHRIS_PACS_ADDRESS`          | PACS server addresses (optional, see [PACS address configuration](#pacs-address-configuration))     |
-| `CHRIS_LISTENER_THREADS`      | Maximum number of concurrent SCU clients to handle. (see [Performance Tuning](#performance-tuning)) |
-| `TOKIO_WORKER_THREADS`        | Number of threads to use for the async runtime                                                      |
-| `CHRIS_VERBOSE`               | Set as `yes` to show debugging messages                                                             |
-| `PORT`                        | TCP port number to listen on                                                                        |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry Collector gRPC endpoint                                                               |
-| `OTEL_RESOURCE_ATTRIBUTES`    | Resource attributes, e.g. `service.name=oxidicom-test`                                              |
+Only `OXIDICOM_DB_CONNECTION` and `OXIDICOM_FILES_ROOT` are required. Those configure how oxidicom connects to CUBE.
+The other variables are either for optional features or performance tuning.
+
+| Name                             | Description                                                                                         |
+|----------------------------------|-----------------------------------------------------------------------------------------------------|
+| `OXIDICOM_DB_CONNECTION`         | (required) PostgreSQL connection string                                                             |
+| `OXIDICOM_DB_POOL`               | Database connection pool size                                                                       |
+| `OXIDICOM_DB_BATCH_SIZE`         | Maximum number of files to register per request                                                     |
+| `OXIDICOM_FILES_ROOT`            | (required) Path to where _CUBE_'s storage is mounted                                                |
+| `OXIDICOM_SCP_AET`               | DICOM AE title (hospital PACS pushing to `oxidicom` should be configured to push to this name)      |
+| `OXIDICOM_SCP_STRICT`            | Whether receiving PDUs must not surpass the negotiated maximum PDU length.                          |
+| `OXIDICOM_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                  |
+| `OXIDICOM_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                   |                                                      
+| `OXIDICOM_PACS_ADDRESS`          | PACS server addresses (optional, see [PACS address configuration](#pacs-address-configuration))     |
+| `OXIDICOM_LISTENER_THREADS`      | Maximum number of concurrent SCU clients to handle. (see [Performance Tuning](#performance-tuning)) |
+| `OXIDICOM_PORT`                  | TCP port number to listen on                                                                        |
+| `OXIDICOM_VERBOSE`               | Set as `yes` to show debugging messages                                                             |
+| `TOKIO_WORKER_THREADS`           | Number of threads to use for the async runtime                                                      |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`    | OpenTelemetry Collector gRPC endpoint                                                               |
+| `OTEL_RESOURCE_ATTRIBUTES`       | Resource attributes, e.g. `service.name=oxidicom-test`                                              |
 
 ## Performance Tuning
 
@@ -83,11 +87,11 @@ under the space `SERVICES/PACS/org.fnndsc.oxidicom`. See [CUSTOM_SPEC.md](./CUST
 
 ## PACS Address Configuration
 
-The environment variable `CHRIS_PACS_ADDRESS` should be a comma-separated list of `key=value` pairs.
+The environment variable `OXIDICOM_PACS_ADDRESS` should be a comma-separated list of `key=value` pairs.
 Blanks will be ignored (which implies that trailing comma is OK).
 
 The PACS server address for a client AE title is used to lookup the `NumberOfSeriesRelatedInstances`.
-For example, suppose `CHRIS_PACS_ADDRESS=BCH=1.2.3.4:4242`. When we receive DICOMs from `BCH`, `oxidicom`
+For example, suppose `OXIDICOM_PACS_ADDRESS=BCH=1.2.3.4:4242`. When we receive DICOMs from `BCH`, `oxidicom`
 will do a C-FIND to `1.2.3.4:4242`, asking them what is the `NumberOfSeriesRelatedInstances` for the
 received DICOMs. When we receive DICOMs from `MGH`, the PACS address is unknown, so `oxidicom` will set
 `NumberOfSeriesRelatedInstances=unknown`.

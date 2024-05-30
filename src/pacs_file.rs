@@ -98,7 +98,8 @@ impl PacsFileRegistrationRequest {
         let PatientName = tts(dcm, tags::PATIENT_NAME);
         let PatientBirthDate = tts(dcm, tags::PATIENT_BIRTH_DATE);
         let StudyDescription = tts(dcm, tags::STUDY_DESCRIPTION);
-        let AccessionNumber = tts(dcm, tags::ACCESSION_NUMBER);
+        let AccessionNumber =
+            tts(dcm, tags::ACCESSION_NUMBER).unwrap_or("AccessionNumber".to_string()); // TODO how should I handle this? CUBE allows for AccessionNumber to be empty, but the database does not.
         let SeriesDescription = tts(dcm, tags::SERIES_DESCRIPTION);
 
         // SeriesNumber and InstanceNumber are not fields of a ChRIS PACSFile.
@@ -129,7 +130,7 @@ impl PacsFileRegistrationRequest {
             sanitize_path(PatientBirthDate.as_deref().unwrap_or("")),
             // Study
             sanitize_path(StudyDescription.as_deref().unwrap_or("StudyDescription")),
-            sanitize_path(AccessionNumber.as_deref().unwrap_or("AccessionNumber")),
+            sanitize_path(AccessionNumber.as_str()),
             sanitize_path(StudyDate_string.as_str()),
             // Series
             SeriesNumber.unwrap_or_else(|| MaybeU32::String("SeriesNumber".to_string())),
@@ -151,7 +152,7 @@ impl PacsFileRegistrationRequest {
             PatientBirthDate,
             PatientAge,
             PatientSex: tts(dcm, tags::PATIENT_SEX),
-            AccessionNumber,
+            AccessionNumber: Some(AccessionNumber),
             Modality: tts(dcm, tags::MODALITY),
             ProtocolName: tts(dcm, tags::PROTOCOL_NAME),
             StudyDescription,

@@ -28,6 +28,7 @@ fn init_otel_tracing() -> Result<opentelemetry_sdk::trace::Tracer, opentelemetry
 }
 
 fn init_tracing_subscriber() -> Result<(), tracing::dispatcher::SetGlobalDefaultError> {
+    // TODO replace with config::Config
     let verbose_option = envmnt::get_or("CHRIS_VERBOSE", "").to_lowercase();
     let level = if verbose_option.starts_with("y") || &verbose_option == "true" {
         tracing::Level::INFO

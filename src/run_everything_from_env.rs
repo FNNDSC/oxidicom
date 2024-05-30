@@ -1,7 +1,10 @@
-use camino::Utf8PathBuf;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
+use camino::Utf8PathBuf;
+use sqlx::postgres::PgPoolOptions;
+
+use crate::chrisdb_client::CubePostgresClient;
 use crate::dicomrs_options::{ClientAETitle, OurAETitle};
 use crate::run_everything::run_everything;
 use crate::DicomRsConfig;
@@ -12,19 +15,40 @@ use crate::DicomRsConfig;
 ///
 /// `finite_connections`: shut down the server after the given number of DICOM associations.
 pub async fn run_everything_from_env(finite_connections: Option<usize>) -> anyhow::Result<()> {
-    let files_root = Utf8PathBuf::from(envmnt::get_or_panic("CHRIS_FILES_ROOT"));
-    let address = SocketAddrV4::new(Ipv4Addr::from(0), envmnt::get_u16("PORT", 11111));
+    // TODO replace envmnt with https://docs.rs/config/0.14.0/config/
+    // let config = config::Config::builder().add_source(config::Environment::with_prefix("OXIDICOM").separator("_")).build()?;
+    // let files_root = config.get_string("FILES_ROOT").map(Utf8PathBuf::from)?;
+
+    // let port = config.get("PORT").unwrap_or(11111);
+    let files_root = Utf8PathBuf::from(envmnt::get_or_panic("OXIDICOM_FILES_ROOT"));
+    let address = SocketAddrV4::new(Ipv4Addr::from(0), envmnt::get_u16("OXIDICOM_PORT", 11111));
+
     let dicomrs_config = DicomRsConfig {
-        aet: OurAETitle::from(envmnt::get_or("CHRIS_SCP_AET", "ChRIS")),
-        strict: envmnt::is_or("CHRIS_SCP_STRICT", false),
-        uncompressed_only: envmnt::is_or("CHRIS_SCP_UNCOMPRESSED_ONLY", false),
+        aet: OurAETitle::from(envmnt::get_or("OXIDICOM_SCP_AET", "ChRIS")),
+        strict: envmnt::is_or("OXIDICOM_SCP_STRICT", false),
+        uncompressed_only: envmnt::is_or("OXIDICOM_SCP_UNCOMPRESSED_ONLY", false),
         promiscuous: true,
     };
 
-    let pacs_addresses = parse_string_dict(envmnt::get_or("CHRIS_PACS_ADDRESS", ""))?;
-    let listener_threads = envmnt::get_usize("CHRIS_LISTENER_THREADS", 16);
-    let max_pdu_length = envmnt::get_usize("CHRIS_SCP_MAX_PDU_LENGTH", 16384);
-    // let storage_concurrency = envmnt::get_usize("CHRIS_STORAGE_CONCURRENCY", 16);
+    dbg!("i created the DICOMRS config!");
+    let pacs_addresses = parse_string_dict(envmnt::get_or("OXIDICOM_PACS_ADDRESS", ""))?;
+    let listener_threads = envmnt::get_usize("OXIDICOM_LISTENER_THREADS", 16);
+    let max_pdu_length = envmnt::get_usize("OXIDICOM_SCP_MAX_PDU_LENGTH", 16384);
+
+    // let db_connection = config.get_string("OXIDICOM_DB_CONNECTION")?;
+    let db_connection = envmnt::get_or_panic("OXIDICOM_DB_CONNECTION");
+    let db_pool_size = envmnt::get_u32("OXIDICOM_DB_POOL", 10);
+    let db_batch_size = envmnt::get_usize("OXIDICOM_DB_BATCH_SIZE", 20);
+
+    dbg!("I am going to connect to the database!");
+    let db_pool = PgPoolOptions::new()
+        .max_connections(db_pool_size)
+        .connect(&db_connection)
+        .await?;
+    dbg!("I have connected to the database!");
+    let cubedb_client = CubePostgresClient::new(db_pool, None);
+
+    dbg!("i am going to run everything!");
     run_everything(
         address,
         dicomrs_config,
@@ -33,6 +57,8 @@ pub async fn run_everything_from_env(finite_connections: Option<usize>) -> anyho
         finite_connections,
         listener_threads,
         files_root,
+        cubedb_client,
+        db_batch_size,
     )
     .await
 }
@@ -57,17 +83,20 @@ fn parse_key_value_pair(s: &str) -> anyhow::Result<(ClientAETitle, String)> {
         .map(|(l, r)| (ClientAETitle::from(l), r.to_string()))
         .ok_or_else(|| {
             anyhow::Error::msg(format!(
-                "Bad value for CHRIS_PACS_ADDRESS: \"{s}\" does not contain a '='"
+                "Bad value for OXIDICOM_PACS_ADDRESS: \"{s}\" does not contain a '='"
             ))
         })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_string_dict;
-    use crate::dicomrs_options::ClientAETitle;
-    use rstest::*;
     use std::collections::HashMap;
+
+    use rstest::*;
+
+    use crate::dicomrs_options::ClientAETitle;
+
+    use super::parse_string_dict;
 
     #[rstest]
     #[case("", [])]

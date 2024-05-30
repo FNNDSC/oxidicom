@@ -44,3 +44,8 @@ pub(crate) fn name_of(tag: &Tag) -> &'static str {
         .map(|e| e.alias)
         .unwrap_or("UNKNOWN TAG")
 }
+
+/// Error happened during an iteration of a loop.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub(crate) struct HandleLoopError(pub &'static str);

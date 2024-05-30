@@ -1,40 +1,57 @@
-use std::path::PathBuf;
 use camino::{Utf8Path, Utf8PathBuf};
 use dicom::object::DefaultDicomObject;
-use futures::TryFutureExt;
 use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::dicomrs_options::ClientAETitle;
-use crate::error::DicomStorageError;
+use crate::error::{DicomStorageError, HandleLoopError};
 use crate::event::AssociationEvent;
-use crate::pacs_file::PacsFileRegistration;
+use crate::pacs_file::{PacsFileRegistration, PacsFileRegistrationRequest};
 
-/// Write received DICOMs to storage.
+/// Write incoming DICOMs from `receiver` to storage. DICOM metadata of successfully stored
+/// DICOM files are sent to `registration_sender`.
 pub async fn dicom_storage_writer(
     mut receiver: UnboundedReceiver<AssociationEvent>,
+    registration_sender: UnboundedSender<Option<PacsFileRegistrationRequest>>,
     files_root: Utf8PathBuf,
-) -> anyhow::Result<()> {
+) -> Result<(), HandleLoopError> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     // We have two loops:
-    // 1. The dispatch loop receives DICOM objects, and uses tokio::spawn to handle the incoming DICOM
+    // 1. The dispatch loop receives DICOM objects, and uses tokio::spawn to store the incoming DICOM
     // 2. The results are sent from dispatch_loop to join_loop, which:
+    //    - forwards DICOM metadata to `registration_sender` (to be registered to CUBE database)
     //    - joins completed tasks from dispatch_loop
     //    - blocks dicom_storage_writer until all tasks created here by tokio::spawn are joined
     //    - collects errors which happened from the tasks
     let dispatch_loop = async {
-        let storage_writer = Arc::new(DicomStorageWriter::new(files_root));
+        let files_root = Arc::new(files_root);
         while let Some(event) = receiver.recv().await {
-            let storage_writer = Arc::clone(&storage_writer);
-            let handle = tokio::task::spawn_blocking(move || storage_writer.handle_event(event));
-            tx.send(handle).unwrap()
+            match event {
+                // Do nothing at the start of an association.
+                AssociationEvent::Start { .. } => {}
+                // Store received DICOMs.
+                AssociationEvent::DicomInstance { aec, dcm, .. } => {
+                    let files_root = Arc::clone(&files_root);
+                    let handle = tokio::task::spawn_blocking(move || {
+                        store_dicom(files_root.as_path(), aec, dcm)
+                    });
+                    tx.send(handle).unwrap()
+                }
+                // When an association is finished, we send `None` which tells the
+                // receiving code to flush items to the database.
+                AssociationEvent::Finish { .. } => registration_sender.send(None).unwrap(),
+            }
         }
+        drop(tx);
     };
+    let mut everything_ok = true;
     let join_loop = async {
-        let mut everything_ok = true;
         while let Some(handle) = rx.recv().await {
-            let result = handle.await.unwrap();
-            if result.is_err() {
+            if let Ok(dcm) = handle.await.unwrap() {
+                // on successful DICOM file storage, send the returned DICOM metadata
+                // for registration to CUBE's database
+                registration_sender.send(Some(dcm.request)).unwrap()
+            } else {
                 everything_ok = false;
             }
         }
@@ -42,56 +59,29 @@ pub async fn dicom_storage_writer(
     };
     let (_, everything_ok) = tokio::join!(dispatch_loop, join_loop);
     if everything_ok {
-        anyhow::Ok(())
+        Ok(())
     } else {
-        Err(anyhow::Error::msg(
-            "There was an error writing DICOM files to storage.",
+        Err(HandleLoopError(
+            "There was an error writing DICOMs to storage.",
         ))
     }
 }
 
-struct DicomStorageWriter {
-    files_root: Utf8PathBuf,
-}
-
-impl DicomStorageWriter {
-    fn new(files_root: Utf8PathBuf) -> Self {
-        Self { files_root }
-    }
-
-    fn handle_event(&self, event: AssociationEvent) -> Result<(), ()> {
-        match event {
-            AssociationEvent::Start {
-                ulid,
-                aec,
-                aet,
-                pacs_address,
-            } => {
-                Ok(()) // TODO
-            }
-            AssociationEvent::DicomInstance { ulid, aec, dcm } => {
-                self.on_dicom(aec, dcm).map_err(|_| ())
-            }
-            AssociationEvent::Finish { ulid, ok } => {
-                Ok(()) // TODO
-            }
+/// Wraps [write_dicom] with OpenTelemetry logging.
+fn store_dicom<P: AsRef<Utf8Path>>(
+    files_root: P,
+    pacs_name: ClientAETitle,
+    obj: DefaultDicomObject,
+) -> Result<PacsFileRegistration, DicomStorageError> {
+    let (dcm, bad_tags) = PacsFileRegistration::new(pacs_name, obj)?;
+    match write_dicom(&dcm, files_root) {
+        Ok(path) => tracing::info!(event = "storage", path = path.into_string()),
+        Err(e) => {
+            tracing::error!(event = "storage", error = e.to_string());
+            return Err(e);
         }
     }
-
-    fn on_dicom(&self, pacs_name: ClientAETitle, obj: DefaultDicomObject) -> Result<(), DicomStorageError> {
-        let (dcm, bad_tags) = PacsFileRegistration::new(pacs_name, obj)?;
-        // TODO use bad_tags
-        match write_dicom(&dcm, &self.files_root) {
-            Ok(path) => tracing::info!(event = "storage", path = path.into_string()),
-            Err(e) => {
-                tracing::error!(event = "storage", error = e.to_string());
-                return Err(e);
-            }
-        }
-        // TODO register DICOM to database
-
-        Ok(())
-    }
+    Ok(dcm)
 }
 
 /// Write a DICOM object to the filesystem.

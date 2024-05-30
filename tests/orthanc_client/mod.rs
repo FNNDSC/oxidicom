@@ -1,15 +1,15 @@
 /// Tell Orthanc to push a DICOM series.
-pub fn orthanc_store(
+pub async fn orthanc_store(
     orthanc_url: &str,
     push_to: &str,
     series_instance_uid: &str,
 ) -> Result<StoreResponse, reqwest::Error> {
     let client = OrthancClient::new(orthanc_url);
-    client.store_series(push_to, series_instance_uid)
+    client.store_series(push_to, series_instance_uid).await
 }
 
 struct OrthancClient<'a> {
-    client: reqwest::blocking::Client,
+    client: reqwest::Client,
     url: &'a str,
 }
 
@@ -17,20 +17,20 @@ impl<'a> OrthancClient<'a> {
     fn new(url: &'a str) -> Self {
         Self {
             url,
-            client: reqwest::blocking::Client::new(),
+            client: reqwest::Client::new(),
         }
     }
 
-    fn store_series(
+    async fn store_series(
         &self,
         aet: &str,
         series_instance_uid: &str,
     ) -> Result<StoreResponse, reqwest::Error> {
-        self.find_series(series_instance_uid)
-            .and_then(|resources| self.store(aet, resources))
+        let resources = self.find_series(series_instance_uid).await?;
+        self.store(aet, resources).await
     }
 
-    fn find_series(&self, series_instance_uid: &str) -> Result<Vec<String>, reqwest::Error> {
+    async fn find_series(&self, series_instance_uid: &str) -> Result<Vec<String>, reqwest::Error> {
         let body = OrthancFind {
             level: "Series",
             limit: 1,
@@ -42,12 +42,17 @@ impl<'a> OrthancClient<'a> {
             .post(format!("{}/tools/find", self.url))
             .json(&body)
             .send()
-            .unwrap()
+            .await?
             .error_for_status()?
             .json()
+            .await
     }
 
-    fn store(&self, aet: &str, resources: Vec<String>) -> Result<StoreResponse, reqwest::Error> {
+    async fn store(
+        &self,
+        aet: &str,
+        resources: Vec<String>,
+    ) -> Result<StoreResponse, reqwest::Error> {
         let body = StoreRequest {
             synchronous: true,
             resources,
@@ -57,9 +62,10 @@ impl<'a> OrthancClient<'a> {
             .post(format!("{}/modalities/{}/store", self.url, aet))
             .json(&body)
             .send()
-            .unwrap()
+            .await?
             .error_for_status()?
             .json()
+            .await
     }
 }
 

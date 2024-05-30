@@ -41,22 +41,27 @@ services:
       - minichris-files:/data:rw
     working_dir: /src
     environment:
-      CHRIS_FILES_ROOT: /data
-      CHRIS_URL: http://chris:8000/api/v1/
-      CHRIS_USERNAME: chris
-      CHRIS_PASSWORD: chris1234
-      CHRIS_SCP_AET: OXIDICOMTEST
-      CHRIS_PACS_ADDRESS: OXITESTORTHANC=orthanc:4242
-      PORT: 11112
-      CHRIS_LISTENER_THREADS: 8
-      CHRIS_PUSHER_THREADS: ${CHRIS_PUSHER_THREADS:-4}
-      CHRIS_VERBOSE: "yes"
+      OXIDICOM_FILES_ROOT: /data
+      OXIDICOM_DB_CONNECTION: postgresql://chris:chris1234@db:5432/chris
+
+      OXIDICOM_SCP_AET: OXIDICOMTEST
+      OXIDICOM_PACS_ADDRESS: OXITESTORTHANC=orthanc:4242
+      OXIDICOM_PORT: 11112
+      OXIDICOM_LISTENER_THREADS: 8
+      OXIDICOM_PUSHER_THREADS: ${OXIDICOM_PUSHER_THREADS:-4}
+      OXIDICOM_VERBOSE: "yes"
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_RESOURCE_ATTRIBUTES: service.name=oxidicom-test
+
+      OXIDICOM_TEST_URL: http://chris:8000/api/v1/
+      OXIDICOM_TEST_USERNAME: chris
+      OXIDICOM_TEST_PASSWORD: chris1234
+
       CARGO_TARGET_DIR: /target
       CARGO_HOME: /cargo
-      RUST_BACKTRACE: full
+      # RUST_BACKTRACE: full
+
       # DATABASE_URL must be set for the sqlx crate to validate queries at compile time.
       # see https://docs.rs/sqlx/latest/sqlx/macro.query.html#requirements
       DATABASE_URL: "postgresql://chris:chris1234@db:5432/chris"
