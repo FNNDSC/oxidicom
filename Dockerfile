@@ -9,7 +9,11 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --locked --target x86_64-unknown-linux-musl --recipe-path recipe.json
+
 COPY . .
+
+# important: must be running miniChRIS-docker and in the minichris-local network
+ARG DATABASE_URL="postgresql://chris:chris1234@db:5432/chris"
 RUN cargo build --release --locked --target x86_64-unknown-linux-musl
 
 FROM scratch
