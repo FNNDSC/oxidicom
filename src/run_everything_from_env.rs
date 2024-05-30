@@ -30,7 +30,6 @@ pub async fn run_everything_from_env(finite_connections: Option<usize>) -> anyho
         promiscuous: true,
     };
 
-    dbg!("i created the DICOMRS config!");
     let pacs_addresses = parse_string_dict(envmnt::get_or("OXIDICOM_PACS_ADDRESS", ""))?;
     let listener_threads = envmnt::get_usize("OXIDICOM_LISTENER_THREADS", 16);
     let max_pdu_length = envmnt::get_usize("OXIDICOM_SCP_MAX_PDU_LENGTH", 16384);
@@ -40,15 +39,12 @@ pub async fn run_everything_from_env(finite_connections: Option<usize>) -> anyho
     let db_pool_size = envmnt::get_u32("OXIDICOM_DB_POOL", 10);
     let db_batch_size = envmnt::get_usize("OXIDICOM_DB_BATCH_SIZE", 20);
 
-    dbg!("I am going to connect to the database!");
     let db_pool = PgPoolOptions::new()
         .max_connections(db_pool_size)
         .connect(&db_connection)
         .await?;
-    dbg!("I have connected to the database!");
     let cubedb_client = CubePostgresClient::new(db_pool, None);
 
-    dbg!("i am going to run everything!");
     run_everything(
         address,
         dicomrs_config,
