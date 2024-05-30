@@ -96,9 +96,11 @@ jobs:
         # For unknown reasons, docker container service name DNS doesn't work inside the build, so we need to get the
         # database container's IP address.
         run: |
+          docker network inspect minichris-local
           ip_address_with_subnet=$(docker network inspect minichris-local --format '{{ range .Containers }}{{ if (eq .Name "minichris-docker-db-1") }}{{ .IPv4Address }}{{ end }}{{ end }}')
           ip_address="${ip_address_with_subnet%/*}"
           database_url="postgresql://chris:chris1234@$ip_address:5432/chris"
+          echo "database_url=$database_url"
           docker run --rm --network minichris-local docker.io/library/postgres:16 psql "$database_url" -c 'SELECT 1 + 1'
           echo "DATABASE_URL=" >> "$GITHUB_OUTPUT"
       - name: Build image
