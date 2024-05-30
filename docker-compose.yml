@@ -60,6 +60,7 @@ services:
 
       CARGO_TARGET_DIR: /target
       CARGO_HOME: /cargo
+      CARGO_TERM_COLOR: always
       # RUST_BACKTRACE: full
 
       # DATABASE_URL must be set for the sqlx crate to validate queries at compile time.
