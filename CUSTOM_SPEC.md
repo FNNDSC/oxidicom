@@ -46,11 +46,11 @@ We typically assume some properties are upheld by the DICOM protocol:
 
 In reality, a PACS server will push to us whatever it wants. `oxidicom` does not assume the above are invariants.
 
-`oxidicom` assigns a [UUID](https://www.rfc-editor.org/rfc/rfc4122#section-4.4) to each [Association](#association).
+`oxidicom` assigns a [ULID](https://github.com/ulid/spec) to each [Association](#association).
 It will register key-value pairs to
 
 ```
-SERVICES/PACS/org.fnndsc.oxidicom/{ABSOLUTE_SERIES_DIR}/{association_ulid}/{KEY}={VALUE}
+SERVICES/PACS/org.fnndsc.oxidicom/{ABSOLUTE_SERIES_DIR}/{ASSOCIATION_ULID}/{KEY}={VALUE}
 ```
 
 ### Example
