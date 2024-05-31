@@ -91,6 +91,9 @@ async fn insert_into_pacsfile<'a>(
     create_pacs_as_needed(transaction, files.clone()).await?;
     // bulk insert with PostgreSQL example:
     // https://github.com/launchbadge/sqlx/blob/main/FAQ.md#how-can-i-bind-an-array-to-a-values-clause-how-can-i-do-bulk-inserts
+    // Note: Option<String> is handled as empty-string. This is Django's recommended practice.
+    // https://docs.djangoproject.com/en/4.2/ref/models/fields/#null
+    // Non-string columns such as PatientAge and PatientBirthDate do not have the not null constraint.
     let query = sqlx::query!(
         r#"INSERT INTO pacsfiles_pacsfile (
                    creation_date,      fname,     "PatientID", "PatientName", "StudyInstanceUID", "StudyDescription", "SeriesInstanceUID", "SeriesDescription", "PatientAge",  "PatientBirthDate", "PatientSex", "Modality", "ProtocolName", "StudyDate", "AccessionNumber", pacs_id
@@ -110,24 +113,24 @@ async fn insert_into_pacsfile<'a>(
             .collect::<Vec<_>>(),
         &files
             .iter()
-            .map(|f| f.PatientName.clone())
-            .collect::<Vec<_>>() as &[Option<String>],
+            .map(|f| f.PatientName.as_deref().unwrap_or("").to_string())
+            .collect::<Vec<_>>(),
         &files
             .iter()
             .map(|f| f.StudyInstanceUID.to_string())
             .collect::<Vec<_>>(),
         &files
             .iter()
-            .map(|f| f.StudyDescription.clone())
-            .collect::<Vec<_>>() as &[Option<String>],
+            .map(|f| f.StudyDescription.as_deref().unwrap_or("").to_string())
+            .collect::<Vec<_>>(),
         &files
             .iter()
             .map(|f| f.SeriesInstanceUID.to_string())
             .collect::<Vec<_>>(),
         &files
             .iter()
-            .map(|f| f.SeriesDescription.clone())
-            .collect::<Vec<_>>() as &[Option<String>],
+            .map(|f| f.SeriesDescription.as_deref().unwrap_or("").to_string())
+            .collect::<Vec<_>>(),
         &files
             .iter()
             .map(|f| f.PatientAge.clone())
@@ -135,21 +138,24 @@ async fn insert_into_pacsfile<'a>(
         &files
             .iter()
             .map(|f| f.PatientBirthDate.clone())
-            .collect::<Vec<_>>() as &[Option<String>],
+            .collect::<Vec<_>>() as &[Option<_>],
         &files
             .iter()
-            .map(|f| f.PatientSex.clone())
-            .collect::<Vec<_>>() as &[Option<String>],
-        &files.iter().map(|f| f.Modality.clone()).collect::<Vec<_>>() as &[Option<String>],
+            .map(|f| f.PatientSex.as_deref().unwrap_or("").to_string())
+            .collect::<Vec<_>>(),
         &files
             .iter()
-            .map(|f| f.ProtocolName.clone())
-            .collect::<Vec<_>>() as &[Option<String>],
+            .map(|f| f.Modality.as_deref().unwrap_or("").to_string())
+            .collect::<Vec<_>>(),
+        &files
+            .iter()
+            .map(|f| f.ProtocolName.as_deref().unwrap_or("").to_string())
+            .collect::<Vec<_>>(),
         &files.iter().map(|f| f.StudyDate).collect::<Vec<_>>(),
         &files
             .iter()
-            .map(|f| f.AccessionNumber.clone())
-            .collect::<Vec<_>>() as &[Option<String>],
+            .map(|f| f.AccessionNumber.as_deref().unwrap_or("").to_string())
+            .collect::<Vec<_>>(),
         &files
             .iter()
             .map(|f| f.pacs_name.to_string())
@@ -254,12 +260,12 @@ mod tests {
     use super::*;
     use crate::dicomrs_settings::ClientAETitle;
     use chris::{search::GetOnlyError, ChrisClient};
+    use figment::Figment;
     use futures::prelude::*;
     use rstest::*;
     use sqlx::postgres::PgPoolOptions;
     use std::collections::HashSet;
     use std::path::PathBuf;
-    use figment::Figment;
 
     #[fixture]
     fn pool() -> sqlx::PgPool {
