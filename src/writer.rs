@@ -2,11 +2,12 @@ use camino::{Utf8Path, Utf8PathBuf};
 use dicom::object::DefaultDicomObject;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use ulid::Ulid;
 
 use crate::dicomrs_settings::ClientAETitle;
 use crate::error::{DicomStorageError, HandleLoopError};
 use crate::event::AssociationEvent;
-use crate::pacs_file::{PacsFileRegistration, PacsFileRegistrationRequest};
+use crate::pacs_file::{BadTag, PacsFileRegistration, PacsFileRegistrationRequest};
 
 /// Write incoming DICOMs from `receiver` to storage. DICOM metadata of successfully stored
 /// DICOM files are sent to `registration_sender`.
@@ -30,10 +31,10 @@ pub async fn dicom_storage_writer(
                 // Do nothing at the start of an association.
                 AssociationEvent::Start { .. } => {}
                 // Store received DICOMs.
-                AssociationEvent::DicomInstance { aec, dcm, .. } => {
+                AssociationEvent::DicomInstance { ulid, aec, dcm } => {
                     let files_root = Arc::clone(&files_root);
                     let handle = tokio::task::spawn_blocking(move || {
-                        store_dicom(files_root.as_path(), aec, dcm)
+                        store_dicom(ulid, files_root.as_path(), aec, dcm)
                     });
                     tx.send(handle).unwrap()
                 }
@@ -69,11 +70,13 @@ pub async fn dicom_storage_writer(
 
 /// Wraps [write_dicom] with OpenTelemetry logging.
 fn store_dicom<P: AsRef<Utf8Path>>(
+    ulid: Ulid,
     files_root: P,
     pacs_name: ClientAETitle,
     obj: DefaultDicomObject,
 ) -> Result<PacsFileRegistration, DicomStorageError> {
     let (dcm, bad_tags) = PacsFileRegistration::new(pacs_name, obj)?;
+    report_bad_tags(&dcm.request, ulid, bad_tags);
     match write_dicom(&dcm, files_root) {
         Ok(path) => tracing::info!(event = "storage", path = path.into_string()),
         Err(e) => {
@@ -95,4 +98,26 @@ fn write_dicom<P: AsRef<Utf8Path>>(
     }
     dcm.obj.write_to_file(&output_path)?;
     Ok(output_path)
+}
+
+/// Report bad tags via OpenTelemetry.
+fn report_bad_tags<T: AsRef<[BadTag]>>(
+    pacs_file: &PacsFileRegistrationRequest,
+    ulid: Ulid,
+    bad_tags: T,
+) {
+    let bad_tags_slice = bad_tags.as_ref();
+    if bad_tags_slice.is_empty() {
+        return;
+    }
+    let bad_tags_csv = bad_tags_slice
+        .iter()
+        .map(|bt| bt.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    tracing::warn!(
+        association_ulid = ulid.to_string(),
+        path = &pacs_file.path,
+        bad_tags = bad_tags_csv
+    )
 }
