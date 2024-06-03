@@ -17,16 +17,6 @@ fn init_otel_tracing() -> Result<opentelemetry_sdk::trace::Tracer, opentelemetry
         .tracing()
         .with_exporter(opentelemetry_otlp::new_exporter().tonic())
         .install_batch(opentelemetry_sdk::runtime::Tokio)
-    // TODO DELETE ME?
-    // global::set_text_map_propagator(TraceContextPropagator::new());
-    // let exporter = opentelemetry_otlp::new_exporter()
-    //     .http()
-    //     .build_span_exporter()?;
-    // let provider = TracerProvider::builder()
-    //     .with_simple_exporter(exporter)
-    //     .build();
-    // global::set_tracer_provider(provider);
-    // Ok(())
 }
 
 fn init_tracing_subscriber() -> Result<(), tracing::dispatcher::SetGlobalDefaultError> {
