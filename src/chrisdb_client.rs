@@ -62,7 +62,8 @@ impl CubePostgresClient {
                 .map(|_| {
                     let cx = Context::current();
                     let value = Value::Array(Array::String(paths_to_add));
-                    cx.span().set_attribute(KeyValue::new("pacsfile_paths", value));
+                    cx.span()
+                        .set_attribute(KeyValue::new("pacsfile_paths", value));
                 })
         } else {
             Err(PacsFileDatabaseError::WrongNumberOfAffectedRows {

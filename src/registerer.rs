@@ -1,6 +1,6 @@
-use std::sync::Arc;
-use opentelemetry::Context;
 use opentelemetry::trace::{FutureExt, Status, TraceContextExt, Tracer};
+use opentelemetry::Context;
+use std::sync::Arc;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
