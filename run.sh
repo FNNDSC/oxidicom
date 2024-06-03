@@ -11,13 +11,5 @@ if [ "$CI" = "true" ]; then
   notty='-T'
 fi
 
-nproc=$(nproc)
-
-if [ "$nproc" -lt 4 ]; then
-  export CHRIS_PUSHER_THREADS=$nproc
-else
-  export CHRIS_PUSHER_THREADS=$((nproc / 2))
-fi
-
 export GID=$(id -g)
-exec docker compose --profile oxidicom run --use-aliases $notty oxidicom "$@"
+exec docker compose --profile oxidicom run --rm --use-aliases $notty oxidicom "$@"

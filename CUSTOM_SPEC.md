@@ -19,11 +19,15 @@ Each DICOM instance is represented by one DICOM file.
 
 _CUBE_ keeps track of individual DICOM files in its `api/v1/pacsfiles/` API.
 
-### _ChRIS_ Series-Wise Convention
+### Series-Wise Convention
 
-In _ChRIS_, it is typical for both users and the system to operate series-wise. For instance,
-we typically pull DICOM series. `oxidicom` operates series-wise but does not make any incorrect
-assumptions about series-wise operation.
+At the FNNDSC, structural MRI is our biggest area of research.
+
+- One DICOM instance is a 2D MRI slice.
+- One DICOM series is a 3D MRI scan (or a 4D fMRI).
+- One DICOM study is a collection of MRI scans.
+
+Since a DICOM series is "one scan," `oxidicom` keeps track of the series being received.
 
 ### DICOM Terminology
 
@@ -33,10 +37,13 @@ however during the retrieval of DICOM files, the PACS' role is a client.)
 #### Association
 
 The TCP connection made by the hospital PACS to `oxidicom` in which DICOM files are received is called a
-**DICOM association.** During an association, we typically receive one series, which is typically comprised of
-one or more DICOM instances. In reality, the PACS could possibly send us a study, a patient, anything, or nothing.
+**DICOM association.** During an association, we typically receive one series or one study, which consists
+of [1, N) DICOM instances.
 
-## Association UUID Path
+In reality, the PACS could possibly send us a study, a patient, anything, or nothing. `oxidicom` will
+accept whatever it is given without fuss.
+
+## Association ULID Path
 
 We typically assume some properties are upheld by the DICOM protocol:
 
@@ -44,13 +51,14 @@ We typically assume some properties are upheld by the DICOM protocol:
 - SeriesInstanceUID is globally unique for all series
 - The NumberOfSeriesRelatedInstances for a series will always be the same
 
-In reality, a PACS server will push to us whatever it wants. `oxidicom` does not assume the above are invariants.
+In reality, a PACS server will push to us whatever it wants. `oxidicom` does not assume the above are
+always true.
 
-`oxidicom` assigns a [UUID](https://www.rfc-editor.org/rfc/rfc4122#section-4.4) to each [Association](#association).
+`oxidicom` assigns a [ULID](https://github.com/ulid/spec) to each [Association](#association).
 It will register key-value pairs to
 
 ```
-SERVICES/PACS/org.fnndsc.oxidicom/{ABSOLUTE_SERIES_DIR}/{ASSOCIATION_UUID}/{KEY}={VALUE}
+SERVICES/PACS/org.fnndsc.oxidicom/{ABSOLUTE_SERIES_DIR}/{ASSOCIATION_ULID}/{KEY}={VALUE}
 ```
 
 ### Example
@@ -66,29 +74,29 @@ The `ABSOLUTE_SERIES_DIR` is `SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-200
 After trying to retrieve the series once, you will find the following files to be created:
 
 ```
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/NumberOfSeriesRelatedInstances=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/OxidicomAttemptedPushCount=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/NumberOfSeriesRelatedInstances=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/OxidicomAttemptedPushCount=192
 ```
 
 Let's say that you attempt to retrieve the series a second time. You will now find:
 
 ```
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/c9af1e71-bf26-46fe-a821-6aa377027a8b/NumberOfSeriesRelatedInstances=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/c9af1e71-bf26-46fe-a821-6aa377027a8b/OxidicomAttemptedPushCount=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/NumberOfSeriesRelatedInstances=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/OxidicomAttemptedPushCount=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WN2KMQ36T7E85SVX6G4V4/NumberOfSeriesRelatedInstances=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WN2KMQ36T7E85SVX6G4V4/OxidicomAttemptedPushCount=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/NumberOfSeriesRelatedInstances=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/OxidicomAttemptedPushCount=192
 ```
 
 What if the hospital PACS _misbehaves_, sending us a different `NumberOfSeriesRelatedInstances` on the third retrieve attempt?
 You will find:
 
 ```
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/28718a6f-23bf-4770-b4da-a8b3eae8907d/NumberOfSeriesRelatedInstances=43
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/28718a6f-23bf-4770-b4da-a8b3eae8907d/OxidicomAttemptedPushCount=43
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/c9af1e71-bf26-46fe-a821-6aa377027a8b/NumberOfSeriesRelatedInstances=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/c9af1e71-bf26-46fe-a821-6aa377027a8b/OxidicomAttemptedPushCount=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/NumberOfSeriesRelatedInstances=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/OxidicomAttemptedPushCount=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WP273YRHSH33TC3BNDJEB/NumberOfSeriesRelatedInstances=43
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WP273YRHSH33TC3BNDJEB/OxidicomAttemptedPushCount=43
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WN2KMQ36T7E85SVX6G4V4/NumberOfSeriesRelatedInstances=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WN2KMQ36T7E85SVX6G4V4/OxidicomAttemptedPushCount=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/NumberOfSeriesRelatedInstances=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/OxidicomAttemptedPushCount=192
 ```
 
 ## Key-Value Pairs
@@ -117,7 +125,7 @@ Or, leave out the `&ProtocolName=` query to get both `NumberOfSeriesRelatedInsta
             "url": "https://example.org/api/v1/pacsfiles/1747/",
             "id": 1747,
             "creation_date": "2024-03-20T17:22:41.432808-04:00",
-            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/ba302287-cb03-4cdd-a01e-9027c8dbfee7/OxidicomAttemptedPushCount=192",
+            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WP273YRHSH33TC3BNDJEB/OxidicomAttemptedPushCount=192",
             "fsize": 0,
             "PatientID": "1449c1d",
             "PatientName": "",
@@ -139,7 +147,7 @@ Or, leave out the `&ProtocolName=` query to get both `NumberOfSeriesRelatedInsta
             "url": "https://example.org/api/v1/pacsfiles/1553/",
             "id": 1553,
             "creation_date": "2024-03-20T17:22:17.754581-04:00",
-            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/ba302287-cb03-4cdd-a01e-9027c8dbfee7/NumberOfSeriesRelatedInstances=192",
+            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WP273YRHSH33TC3BNDJEB/NumberOfSeriesRelatedInstances=192",
             "fsize": 0,
             "PatientID": "1449c1d",
             "PatientName": "",
@@ -216,7 +224,7 @@ NumberOfSeriesRelatedInstances is one of:
 
 "unknown" will be registered in any case of error, e.g.
 
-- `oxidicom` was not configured with `CHRIS_PACS_ADDRESS` so it does not know how to contact the PACS
+- `oxidicom` was not configured with `OXIDICOM_PACS_ADDRESS` so it does not know how to contact the PACS
 - The PACS did not return a value
 - The PACS returned an invalid value
 
@@ -234,17 +242,14 @@ _attempted_ to push as `OxidicomAttemptedPushCount`.
 
 ## File Appearance Timing
 
-The file for `NumberOfSeriesRelatedInstances=*` will be registered around the same time as the first DICOM file is
-registered. When pulling a MR series containing >100 DICOM instances, it's usually safe to assume that the file
-for `NumberOfSeriesRelatedInstances` will appear before the retrieval is complete. If your series is expected to
-contain one or an otherwise small number of DICOM instances, then it is necessary to poll for the existence of the
-file for `NumberOfSeriesRelatedInstances`.
+The file for `NumberOfSeriesRelatedInstances=*` will be relatively slow to appear, because it can only be queried
+for after the first DICOM instance of a series is received.
 
-The appearance of a file `OxidicomAttemptedPushCount=*` means no more DICOM files will appear in CUBE for the
-association (I.E. the retrieval is "done"). Note that it does _not_ guarantee that the file for
-`NumberOfSeriesRelatedInstances=*` has been received yet.
+The file `OxidicomAttemptedPushCount=*` is guaranteed to be the last file to be registered. In other words, the
+appearance of the file `OxidicomAttemptedPushCount=*` indicates the retrieval is "done" and no more DICOM files
+will be received for the series (in this association).
 
-Here's what a timeline might look like for a retrieve of 192 DICOM instances:
+Here's what a timeline **might** look like for a retrieve of 192 DICOM instances:
 
 ```
                                                time --->
@@ -265,12 +270,22 @@ Push to CUBE          |      [=====|=====|=============================]
                       First DICOM received by oxidicom from PACS
 ```
 
+Data reception and handling are asynchronous. In testing, it is often the case that the DICOM association
+pushes data much faster than storage speed. In this situation, the spans look like
+
+```
+                                               time --->
+DICOM Association    [====================]
+
+Push to CUBE                                         [=====================================]
+```
+
 ## Suggested Client Implementation
 
 A simple client implementation would just poll for the existence of a `OxidicomAttemptedPushCount=*` to know
 when a PACS retrieve operation is complete. Doing so assumes that (a) the PACS server is well-behaved,
-(b) everything between PFDCM <--> PACS <--> oxidicom <--> CUBE is working smoothly. These assumptions are
-usually true, however this implementation can cause silent errors.
+(b) everything between PFDCM <--> PACS <--> oxidicom <--> Postgres <--> CUBE is working smoothly. These
+assumptions are usually true, however this implementation can cause silent errors.
 
 Ideally, a client who wants to monitor the progress of a PACS pull operation _should_ do:
 

@@ -32,6 +32,8 @@ jobs:
       run: docker compose up -d orthanc
     - name: Download example data
       run: docker compose up get-data
+    - name: Compile test binary
+      run: just test --no-run
     - name: Integration test
       run: just test
   build:
@@ -68,7 +70,12 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
               for k, v in outputs.items():
                   out.write(f'{k}={v}\n')
+      - uses: FNNDSC/miniChRIS-docker@master  # need to run CUBE for sqlx to do compile-time validation of SQL queries
       - uses: docker/setup-buildx-action@v3
+        with:
+          # builder needs to be able to see the Postgres database running in the minichris-local network,
+          # so that the sqlx crate can do compile-time verification of SQL commands.
+          driver-opts: network=minichris-local
       - name: Login to DockerHub
         if: github.event_name == 'push' || github.event_name == 'release'
         id: dockerhub_login
@@ -83,11 +90,25 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Get database IP
+        id: read-network
+        # sqlx crate needs the environment variable DATABASE_URL to be set for compile-time validation of SQL commands.
+        # For unknown reasons, docker container service name DNS doesn't work inside the build, so we need to get the
+        # database container's IP address.
+        run: |
+          db_container_name=$(docker ps -f 'label=com.docker.compose.service=db' --format '{{ .Names }}')
+          ip_address_with_subnet=$(docker network inspect minichris-local --format "{{ range .Containers }}{{ if (eq .Name \"$db_container_name\") }}{{ .IPv4Address }}{{ end }}{{ end }}")
+          ip_address="${ip_address_with_subnet%/*}"
+          database_url="postgresql://chris:chris1234@$ip_address:5432/chris"
+          echo "db_container_name=$db_container_name ip_address=$ip_address database_url=$database_url"
+          docker run --rm --network minichris-local docker.io/library/postgres:16 psql "$database_url" -c 'SELECT 1 + 1'
+          echo "DATABASE_URL=$database_url" >> "$GITHUB_OUTPUT"
       - name: Build image
         uses: docker/build-push-action@v5
         id: docker_build
         with:
           tags: ${{ steps.info.outputs.tags_csv }}
-          push: true
+          push: ${{ steps.dockerhub_login.outcome == 'success' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: DATABASE_URL=${{ steps.read-network.outputs.DATABASE_URL }}

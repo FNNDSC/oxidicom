@@ -1,4 +1,6 @@
-FROM docker.io/lukemathwalker/cargo-chef:0.1.66-rust-1.76-alpine3.18 AS chef
+# important: must be running miniChRIS-docker and in the minichris-local network
+
+FROM docker.io/lukemathwalker/cargo-chef:0.1.66-rust-1.78-alpine3.18 AS chef
 WORKDIR /app
 ARG CARGO_TERM_COLOR=always
 
@@ -9,7 +11,10 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --locked --target x86_64-unknown-linux-musl --recipe-path recipe.json
+
 COPY . .
+# need to set DATABASE_URL for sqlx crate to do compile-time validation of SQL commands
+ARG DATABASE_URL
 RUN cargo build --release --locked --target x86_64-unknown-linux-musl
 
 FROM scratch

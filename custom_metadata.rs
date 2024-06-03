@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use opentelemetry::trace::{Status, TraceContextExt, Tracer};
 use opentelemetry::{global, KeyValue};
-use uuid::Uuid;
 
 use crate::cube_client::CubePacsStorageClient;
 use crate::error::ChrisPacsError;
@@ -55,7 +54,7 @@ pub(crate) fn register_all_attempted_pushes(
     let tracer = global::tracer(env!("CARGO_PKG_NAME"));
     tracer.in_span("register_all_attempted_pushes", |cx| {
         cx.span().set_attribute(KeyValue::new(
-            "association_uuid",
+            "association_ulid",
             uuid.hyphenated().to_string(),
         ));
         let results: Vec<_> = series

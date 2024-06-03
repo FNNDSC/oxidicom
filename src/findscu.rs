@@ -3,7 +3,7 @@
 //! Mostly based on
 //! https://github.com/Enet4/dicom-rs/tree/7c0e5ab895e2f57c432cece41077f13abd4d7f71/findscu
 
-use crate::dicomrs_options::{ClientAETitle, OurAETitle};
+use crate::dicomrs_settings::{ClientAETitle, OurAETitle};
 use anyhow::{bail, Context};
 use dicom::core::{DataElement, PrimitiveValue, VR};
 use dicom::dicom_value;
@@ -17,10 +17,10 @@ use opentelemetry::trace::{Status, TraceContextExt, Tracer};
 use opentelemetry::{global, KeyValue};
 use std::borrow::Cow;
 use std::io::Read;
-use uuid::Uuid;
+use ulid::Ulid;
 
 pub(crate) struct FindScuParameters {
-    pub(crate) uuid: Uuid,
+    pub(crate) ulid: Ulid,
     pub(crate) pacs_address: String,
     pub(crate) aec: ClientAETitle,
     pub(crate) aet: OurAETitle,
@@ -29,21 +29,29 @@ pub(crate) struct FindScuParameters {
 }
 
 impl FindScuParameters {
-    pub(crate) fn get_number_of_series_related_instances(&self) -> Option<usize> {
+    pub(crate) fn get_number_of_series_related_instances(&self) -> Result<usize, ()> {
         let tracer = global::tracer(env!("CARGO_PKG_NAME"));
         tracer.in_span("findscu", |cx| {
             cx.span().set_attributes(self.to_otel_attributes());
             match self.try_get_number_of_series_related_instances(&cx) {
                 Ok(num) => {
                     cx.span().set_status(Status::Ok);
-                    Some(num)
+                    Ok(num)
                 }
                 Err(err) => {
-                    tracing::error!("{:?}", &err);
+                    tracing::error!(
+                        association_ulid = self.ulid.to_string(),
+                        pacs_address = &self.pacs_address,
+                        aec = self.aec.as_str(),
+                        aet = self.aet.as_str(),
+                        StudyInstanceUID = &self.study_instance_uid,
+                        SeriesInstanceUID = &self.series_instance_uid,
+                        message = err.to_string(),
+                    );
                     cx.span().set_status(Status::Error {
                         description: Cow::Owned(err.to_string()),
                     });
-                    None
+                    Err(())
                 }
             }
         })
@@ -219,7 +227,8 @@ impl FindScuParameters {
             .filter(|dcm| {
                 dcm.get(tags::SERIES_INSTANCE_UID)
                     .and_then(|ele| ele.string().ok())
-                    .is_some_and(|uid| uid == &self.series_instance_uid)
+                    .map(|uid| uid.replace('\0', ""))
+                    .is_some_and(|uid| uid.trim() == &self.series_instance_uid)
             })
             .find_map(|dcm| {
                 dcm.get(tags::NUMBER_OF_SERIES_RELATED_INSTANCES)
@@ -250,7 +259,7 @@ impl FindScuParameters {
 
     fn to_otel_attributes(&self) -> Vec<KeyValue> {
         vec![
-            KeyValue::new("association_uuid", self.uuid.hyphenated().to_string()),
+            KeyValue::new("association_ulid", self.ulid.to_string()),
             KeyValue::new("pacs_address", self.pacs_address.to_string()),
             KeyValue::new("aec", self.aec.to_string()),
             KeyValue::new("aet", self.aet.to_string()),

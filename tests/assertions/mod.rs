@@ -1,14 +1,11 @@
-use crate::{CALLED_AE_TITLE, EXAMPLE_SERIES_INSTANCE_UIDS};
 use chris::types::{CubeUrl, Username};
 use chris::ChrisClient;
-use std::time::Duration;
+use figment::providers::Env;
+use figment::Figment;
 
-pub fn run_assertions(expected_counts: &[usize]) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(assertions(expected_counts))
-}
+use crate::{CALLED_AE_TITLE, EXAMPLE_SERIES_INSTANCE_UIDS};
 
-async fn assertions(expected_counts: &[usize]) {
+pub async fn run_assertions(expected_counts: &[usize]) {
     let client = get_client_from_env().await;
     for (series, expected_count) in EXAMPLE_SERIES_INSTANCE_UIDS
         .iter()
@@ -23,12 +20,6 @@ async fn assertions(expected_counts: &[usize]) {
             .await
             .unwrap();
         assert_eq!(actual_count, *expected_count);
-
-        // It might take "Oxidicom Custom Metadata" files a little bit more time to appear
-        // after all DICOM files were pushed. So we sleep for 1 second, but no more.
-        // (If they don't appear within 1 second, the performance is too bad, and we will
-        // fail this test.)
-        tokio::time::sleep(Duration::from_secs(1)).await;
 
         // the "Oxidicom Custom Metadata" spec should store the NumberOfSeriesRelatedInstances
         // in a blank file with the filename NumberOfSeriesRelatedInstances=value,
@@ -71,19 +62,34 @@ async fn assertions(expected_counts: &[usize]) {
             .unwrap()
             .expect("\"Oxidicom Custom Metadata\" file for OxidicomAttemptedPushCount not found. It should be registered after the last DICOM file was pushed.")
             .object;
-        assert_eq!(custom_file_num_attempts.series_description, Some(expected_count.to_string()))
+        assert_eq!(
+            custom_file_num_attempts.series_description,
+            Some(expected_count.to_string())
+        )
     }
 }
 
 async fn get_client_from_env() -> ChrisClient {
-    let cube_url = CubeUrl::new(envmnt::get_or_panic("CHRIS_URL")).unwrap();
-    let username = Username::new(envmnt::get_or_panic("CHRIS_USERNAME"));
-    let password = envmnt::get_or_panic("CHRIS_PASSWORD");
-    let account = chris::Account::new(&cube_url, &username, &password);
+    let TestSettings {
+        url,
+        username,
+        password,
+    } = Figment::from(Env::prefixed("OXIDICOM_TEST_"))
+        .extract()
+        .unwrap();
+
+    let account = chris::Account::new(&url, &username, &password);
     let token = account.get_token().await.unwrap();
-    ChrisClient::build(cube_url, username, token)
+    ChrisClient::build(url, username, token)
         .unwrap()
         .connect()
         .await
         .unwrap()
+}
+
+#[derive(serde::Deserialize)]
+struct TestSettings {
+    url: CubeUrl,
+    username: Username,
+    password: String,
 }

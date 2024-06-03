@@ -21,80 +21,63 @@ Rewriting the functionality of `pfdcm` in Rust and with a modern design has led 
 - Simplicity: client can simply check for the number of PACS files existing in CUBE (for a given
   SeriesInstanceUID) instead of having to ask pfdcm for intermediate progress information (and having
   to poll pfdcm to completion).
-- Observability: `oxidicom` outputs structured logs. I also plan to add OpenTelemetry metrics.
+- Observability: `oxidicom` outputs structured logs and also sends traces to OpenTelemetry collector.
 - Scalability: manual implementation of C-STORE makes `oxidicom` horizontally scalable (opposed to
   relying on dcmtk's `storescp`, which is harder to scale because it spawns subprocesses).
 
 Prior to `oxidicom`, `pfdcm` was the major bottleneck in the _ChRIS_ PACS query/retrieval architecture.
-Now, _CUBE_ is the bottleneck. See the section on [Performance Tuning](#performance-tuning) below.
+Prior to `oxidicom` version 2, [CUBE was the bottleneck](https://github.com/FNNDSC/ChRIS_ultron_backEnd/issues/546).
+Since `oxidicom` version 2, the _ChRIS_ architecture is fully able to keep up with user requests and
+the data being sent to it from PACS, being capable of receiving >1,000s of DICOM files per second (with good hardware).
 
 ## Environment Variables
 
-| Name                          | Description                                                                                             |
-|-------------------------------|---------------------------------------------------------------------------------------------------------|
-| `CHRIS_URL`                   | (required) CUBE `v1/api/` URL                                                                           |
-| `CHRIS_USERNAME`              | (required) Username of user to do PACSFile registration. Note: CUBE requires the username to be "chris" |
-| `CHRIS_PASSWORD`              | (required) User password                                                                                |
-| `CHRIS_FILES_ROOT`            | (required) Path to where _CUBE_'s storage is mounted                                                    |
-| `CHRIS_HTTP_RETRIES`          | Number of times to retry failed HTTP request to CUBE                                                    |
-| `CHRIS_SCP_AET`               | DICOM AE title (hospital PACS pushing to `oxidicom` should be configured to push to this name)          |
-| `CHRIS_SCP_STRICT`            | Whether receiving PDUs must not surpass the negotiated maximum PDU length.                              |
-| `CHRIS_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                      |
-| `CHRIS_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                       |                                                      
-| `CHRIS_PACS_ADDRESS`          | PACS server addresses (optional, see [PACS address configuration](#pacs-address-configuration))         |
-| `CHRIS_LISTENER_THREADS`      | Maximum number of concurrent SCU clients to handle. (see [Performance Tuning](#performance-tuning))     |
-| `CHRIS_PUSHER_THREADS`        | Maximum number of concurrent HTTP requests to _CUBE_. (see [Performance Tuning](#performance-tuning))   |
-| `CHRIS_VERBOSE`               | Set as `yes` to show debugging messages                                                                 |
-| `PORT`                        | TCP port number to listen on                                                                            |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry Collector HTTP endpoint                                                                   |
-| `OTEL_RESOURCE_ATTRIBUTES`    | Resource attributes, e.g. `service.name=oxidicom-test`                                                  |
+Only `OXIDICOM_DB_CONNECTION` and `OXIDICOM_FILES_ROOT` are required. Those configure how oxidicom connects to CUBE.
+The other variables are either for optional features or performance tuning.
+
+| Name                             | Description                                                                                         |
+|----------------------------------|-----------------------------------------------------------------------------------------------------|
+| `OXIDICOM_DB_CONNECTION`         | (required) PostgreSQL connection string                                                             |
+| `OXIDICOM_DB_POOL`               | Database connection pool size                                                                       |
+| `OXIDICOM_DB_BATCH_SIZE`         | Maximum number of files to register per request                                                     |
+| `OXIDICOM_FILES_ROOT`            | (required) Path to where _CUBE_'s storage is mounted                                                |
+| `OXIDICOM_SCP_AET`               | DICOM AE title (hospital PACS pushing to `oxidicom` should be configured to push to this name)      |
+| `OXIDICOM_SCP_STRICT`            | Whether receiving PDUs must not surpass the negotiated maximum PDU length.                          |
+| `OXIDICOM_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                   |                                                      
+| `OXIDICOM_SCP_PROMISCUOUS`       | Whether to accept unknown abstract syntaxes.                                                        |
+| `OXIDICOM_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                  |
+| `OXIDICOM_PACS_ADDRESS`          | PACS server addresses (recommended, see [PACS address configuration](#pacs-address-configuration))  |
+| `OXIDICOM_LISTENER_THREADS`      | Maximum number of concurrent SCU clients to handle. (see [Performance Tuning](#performance-tuning)) |
+| `OXIDICOM_LISTENER_PORT`         | TCP port number to listen on                                                                        |
+| `OXIDICOM_VERBOSE`               | Set as `yes` to show debugging messages                                                             |
+| `TOKIO_WORKER_THREADS`           | Number of threads to use for the async runtime                                                      |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`    | OpenTelemetry Collector gRPC endpoint                                                               |
+| `OTEL_RESOURCE_ATTRIBUTES`       | Resource attributes, e.g. `service.name=oxidicom-test`                                              |
+
+See [src/settings.rs](src/settings.rs) for the source of truth on the table above and default values of optional settings.
 
 ## Performance Tuning
 
-Internally, `oxidicom` runs two thread pools:
+Behind the scenes, _oxidicom_ has three components connected by asynchronous channels:
 
-- "Listener" receives DICOM instance files over a TCP port
-- "Pusher" pushes received DICOM files to CUBE
+1. listener: receives DICOM objects over TCP
+2. writer: writes DICOM objects to storage
+3. registerer: writes DICOM metadata to CUBE's database
 
-The number of threads to use for the "listener" and "pusher" components are configured by
-`CHRIS_LISTENER_THREADS` and `CHRIS_PUSHER_THREADS` respectively.
-
-<details>
-<summary>
-Resource usage, and on the choice of an in-memory queue
-</summary>
-
-In an older version of `oxidicom`, "listening" and "pushing" were synchronous.
-With 16 threads, the resource usage of `oxidicom` would not exceed 0.5 CPU and
-1.5 GiB. Meanwhile, _CUBE_ struggled to keep up with the requests being made by
-`oxidicom` even with a CPU limit of 12. https://github.com/FNNDSC/ChRIS_ultron_backEnd/issues/546
-
-Thus, the "listener" and "pusher" activities were decoupled and handled by separate thread pools,
-which communicate over an internal [mpsc channel](https://doc.rust-lang.org/std/sync/mpsc/).
-It would be more "cloud-native" for the "listener" and "pusher" activities to live in separate
-microservices which communicate over RabbitMQ. However, we'll have to scale up _CUBE_ by 20 time
-before needing to scale `oxidicom`, so who cares ¯\\\_(ツ)\_/¯
-
-</details>
+`OXIDICOM_LISTENER_THREADS` controls the parallelism of the listener, whereas
+`TOKIO_WORKER_THREADS` controls the async runtime's thread pool which is shared
+between the writer and registerer. (The reason why we have two thread pools is
+an implementation detail: the Rust ecosystem suffers from a sync/async divide.)
 
 ## Failure Modes
 
-- An error with an individual instance does not terminate the association
-  (meaning, subsequent instances will still have the chance to be received).
-- Currently, the following tags are required:
-  StudyInstanceUID, SeriesInstanceUID, SOPInstanceUID, PatientID, and StudyDate.
-  If any of the tags are missing, the DICOM instance will not be stored.
-- Files are first written to storage, then registered to CUBE. If CUBE does not
-  accept the file registration, the file will still remain in storage.
-- If an unknown SOP class UID is encountered, the SCU will (probably) choose to abort
-  the association. In this case, `oxidicom` will be aware that the abortion and the
-  OpenTelemetry span for this association will have `status=error`. This can maybe
-  be resolved, see https://github.com/Enet4/dicom-rs/issues/477
-- If _CUBE_'s response times are slow, then `oxidicom` will experience backpressure
-  and its memory usage will start to balloon.
-- If a PACS retrieve was triggered twice, even though the first one was successful,
-  the file will be overwritten in CUBE's storage, but the second registration will fail.
-  Assuming the file sent by PACS did not change, the operation is idempotent.
+`oxidicom` is designed to be fault-tolerant. Furthermore, it makes few assumptions
+about whether the PACS is well-behaved. For instance, an error with an individual
+DICOM instance does not terminate the association (meaning, subsequent DICOM
+instances will still have the chance to be received).
+
+Receiving the same DICOM data is idempotent. The database row will not be overwritten.
+The duplicate DICOMs will be indicated in a corresponding OpenTelemetry span attribute.
 
 ## "Oxidicom Custom Metadata" Spec
 
@@ -109,11 +92,11 @@ under the space `SERVICES/PACS/org.fnndsc.oxidicom`. See [CUSTOM_SPEC.md](./CUST
 
 ## PACS Address Configuration
 
-The environment variable `CHRIS_PACS_ADDRESS` should be a comma-separated list of `key=value` pairs.
-Blanks will be ignored (which implies that trailing comma is OK).
+The environment variable `OXIDICOM_PACS_ADDRESS` should be a dictionary of AE titles to their IPv4 sockets
+(IP address and port number).
 
-The PACS server address for a client AE title is used to lookup the `NumberOfSeriesRelatedInstances`.
-For example, suppose `CHRIS_PACS_ADDRESS=BCH=1.2.3.4:4242`. When we receive DICOMs from `BCH`, `oxidicom`
+The PACS server address for a client AE title is used to look up the `NumberOfSeriesRelatedInstances`.
+For example, suppose `OXIDICOM_PACS_ADDRESS={BCH="1.2.3.4:4242"}`. When we receive DICOMs from `BCH`, `oxidicom`
 will do a C-FIND to `1.2.3.4:4242`, asking them what is the `NumberOfSeriesRelatedInstances` for the
 received DICOMs. When we receive DICOMs from `MGH`, the PACS address is unknown, so `oxidicom` will set
 `NumberOfSeriesRelatedInstances=unknown`.
@@ -135,7 +118,7 @@ You need to have installed:
 Simply run
 
 ```shell
-just
+just test
 ```
 
 The `just` command, without arguments, will:
@@ -143,22 +126,18 @@ The `just` command, without arguments, will:
 1. Run Orthanc
 2. Download sample data
 3. Push sample data into Orthanc
-4. Run integration tests
+4. Run unit and integration tests
 
 ### Observability
 
 `oxidicom` exports traces to OpenTelemetry collector. There is a span for the association
-(TCP connection from PACS server to send us DICOM objects) and a span for each file registration
-to CUBE.
+(TCP connection from PACS server to send us DICOM objects).
 
 ### Usage of `opentelemetry` v.s. `tracing` in the codebase
 
 `dicom-rs` itself uses the `tracing` crate, though for the spans described above,
-I decided to use the `opentelemetry` crate. However, I am also using the `tracing`
-crate as well. Log messages created by `tracing` _do not_ get exported to the
-OpenTelemetry collector. They are primarily for debugging.
+I decided to use the `opentelemetry` crate for spans, and `tracing` for logs.
 
 ### Sample DICOM files
 
-- https://talk.openmrs.org/t/sources-for-sample-dicom-images/6019
-- https://support.dcmtk.org/redmine/projects/dcmtk/wiki/DICOM_images
+See https://github.com/FNNDSC/sample_dicom_downloader
