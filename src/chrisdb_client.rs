@@ -47,6 +47,11 @@ impl CubePostgresClient {
         let mut transaction = self.pool.begin().await?;
         let unregistered_files =
             warn_and_remove_already_registered(&mut transaction, files.as_ref()).await?;
+        let paths_to_add: Vec<_> = unregistered_files
+            .iter()
+            .map(|pacs_file| pacs_file.path.to_string())
+            .map(StringValue::from)
+            .collect();
         let (count, rows_affected) =
             insert_into_pacsfile(&mut transaction, unregistered_files, self.get_now()).await?;
         if count == rows_affected {
@@ -54,6 +59,11 @@ impl CubePostgresClient {
                 .commit()
                 .await
                 .map_err(PacsFileDatabaseError::from)
+                .map(|_| {
+                    let cx = Context::current();
+                    let value = Value::Array(Array::String(paths_to_add));
+                    cx.span().set_attribute(KeyValue::new("pacsfile_paths", value));
+                })
         } else {
             Err(PacsFileDatabaseError::WrongNumberOfAffectedRows {
                 count,

@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use opentelemetry::Context;
+use opentelemetry::trace::{FutureExt, Status, TraceContextExt, Tracer};
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
@@ -97,16 +99,23 @@ fn register_task(
 ) -> RegistrationTask {
     let client = Arc::clone(client);
     tokio::spawn(async move {
+        let tracer = opentelemetry::global::tracer(env!("CARGO_PKG_NAME"));
+        let span = tracer.start("register_to_postgres");
+        let cx = Context::current_with_span(span);
+
         let n_files = files.len();
-        let result = client.register(files).await;
+        let result = client.register(files).with_context(cx.clone()).await;
         match &result {
             Ok(_) => {
                 tracing::info!(task = "register", count = n_files);
+                cx.span().set_status(Status::Ok);
             }
             Err(e) => {
                 tracing::error!(task = "register", error = e.to_string());
+                cx.span().set_status(Status::error(e.to_string()));
             }
         }
+        cx.span().end();
         result
     })
 }
