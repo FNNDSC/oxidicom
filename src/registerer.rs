@@ -85,7 +85,7 @@ fn take_batch<T>(batches: Batcher<T>) -> (Batcher<T>, Option<Vec<T>>) {
     let batch = batches.into_inner();
     let next_batches = Batcher::new(batch_size);
     if batch.is_empty() {
-        tracing::warn!("batch is empty");
+        tracing::debug!("batch is empty");
         (next_batches, None)
     } else {
         (next_batches, Some(batch))
