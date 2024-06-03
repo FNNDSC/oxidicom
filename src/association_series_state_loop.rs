@@ -141,26 +141,16 @@ fn receive_dicom_instance(
             store_dicom(&files_root, &pacs_file).map(|_| pacs_file.request)
         })
     };
-    let tasks =
-        if let Some(findscu_params) = maybe_findscu(ulid, series_key_set.clone(), association) {
-            let series_key_set = series_key_set.clone();
-            let files_root = Arc::clone(files_root);
-            let findscu_tasks = tokio::task::spawn_blocking(move || {
-                findscu_params
-                    .get_number_of_series_related_instances()
-                    .map(|n| {
-                        series_key_set.into_oxidicom_custom_pacsfile(
-                            ulid,
-                            "NumberOfSeriesRelatedInstances",
-                            n.to_string(),
-                        )
-                    })
-                    .and_then(|pacs_file| create_blank_file(&files_root, pacs_file))
-            });
-            vec![storage_task, findscu_tasks]
-        } else {
-            vec![storage_task]
-        };
+
+    let tasks = if let Some(count) = association.series.get_mut(&series_key_set) {
+        *count += 1;
+        vec![storage_task]
+    } else {
+        association.series.insert(series_key_set.clone(), 1);
+        let numrelatedinstances_task =
+            start_numrelatedinstances_task(ulid, series_key_set.clone(), association, files_root);
+        vec![storage_task, numrelatedinstances_task]
+    };
     Ok((series_key_set, tasks))
 }
 
@@ -233,32 +223,48 @@ async fn create_blank_file_tokio(
         })
 }
 
-/// Inserts or updates `association`. If an insert was needed, and also if [Association::pacs_address]
-/// is [Some], it will create and return [FindScuParameters].
-fn maybe_findscu(
+/// Start a task for producing the "Oxidicom Custom Metadata" `NumberOfSeriesRelatedInstances=N` file.
+fn start_numrelatedinstances_task(
     ulid: Ulid,
     series_key_set: SeriesKeySet,
-    association: &mut Association,
+    association: &Association,
+    files_root: &Arc<Utf8PathBuf>,
+) -> JoinHandle<Result<PacsFileRegistrationRequest, ()>> {
+    let findscu_params = maybe_findscu(ulid, &series_key_set, association);
+    let series_key_set = series_key_set.clone();
+    let files_root = Arc::clone(files_root);
+    tokio::task::spawn_blocking(move || {
+        let value = findscu_params
+            .and_then(|p| p.get_number_of_series_related_instances().ok())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        let pacs_file = series_key_set.into_oxidicom_custom_pacsfile(
+            ulid,
+            "NumberOfSeriesRelatedInstances",
+            value,
+        );
+        create_blank_file(&files_root, pacs_file)
+    })
+}
+
+/// If [Association::pacs_address] is [Some], create and return [FindScuParameters].
+fn maybe_findscu(
+    ulid: Ulid,
+    series_key_set: &SeriesKeySet,
+    association: &Association,
 ) -> Option<FindScuParameters> {
-    if let Some(count) = association.series.get_mut(&series_key_set) {
-        *count += 1;
-        None
-    } else {
-        let findscu_params = if let Some(pacs_address) = &association.pacs_address {
-            let findscu_params = FindScuParameters {
-                ulid,
-                pacs_address: pacs_address.to_string(),
-                aec: association.aec.clone(),
-                aet: association.aet.clone(),
-                study_instance_uid: series_key_set.StudyInstanceUID.to_string(),
-                series_instance_uid: series_key_set.SeriesInstanceUID.to_string(),
-            };
-            Some(findscu_params)
-        } else {
-            None
+    if let Some(pacs_address) = &association.pacs_address {
+        let findscu_params = FindScuParameters {
+            ulid,
+            pacs_address: pacs_address.to_string(),
+            aec: association.aec.clone(),
+            aet: association.aet.clone(),
+            study_instance_uid: series_key_set.StudyInstanceUID.to_string(),
+            series_instance_uid: series_key_set.SeriesInstanceUID.to_string(),
         };
-        association.series.insert(series_key_set, 1);
-        findscu_params
+        Some(findscu_params)
+    } else {
+        None
     }
 }
 
