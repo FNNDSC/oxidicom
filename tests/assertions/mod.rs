@@ -2,7 +2,6 @@ use chris::types::{CubeUrl, Username};
 use chris::ChrisClient;
 use figment::providers::Env;
 use figment::Figment;
-use std::time::Duration;
 
 use crate::{CALLED_AE_TITLE, EXAMPLE_SERIES_INSTANCE_UIDS};
 
@@ -21,12 +20,6 @@ pub async fn run_assertions(expected_counts: &[usize]) {
             .await
             .unwrap();
         assert_eq!(actual_count, *expected_count);
-
-        // It might take "Oxidicom Custom Metadata" files a little bit more time to appear
-        // after all DICOM files were pushed. So we sleep for 1 second, but no more.
-        // (If they don't appear within 1 second, the performance is too bad, and we will
-        // fail this test.)
-        tokio::time::sleep(Duration::from_secs(1)).await;
 
         // the "Oxidicom Custom Metadata" spec should store the NumberOfSeriesRelatedInstances
         // in a blank file with the filename NumberOfSeriesRelatedInstances=value,
