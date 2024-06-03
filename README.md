@@ -21,12 +21,14 @@ Rewriting the functionality of `pfdcm` in Rust and with a modern design has led 
 - Simplicity: client can simply check for the number of PACS files existing in CUBE (for a given
   SeriesInstanceUID) instead of having to ask pfdcm for intermediate progress information (and having
   to poll pfdcm to completion).
-- Observability: `oxidicom` outputs structured logs. I also plan to add OpenTelemetry metrics.
+- Observability: `oxidicom` outputs structured logs and also sends traces to OpenTelemetry collector.
 - Scalability: manual implementation of C-STORE makes `oxidicom` horizontally scalable (opposed to
   relying on dcmtk's `storescp`, which is harder to scale because it spawns subprocesses).
 
 Prior to `oxidicom`, `pfdcm` was the major bottleneck in the _ChRIS_ PACS query/retrieval architecture.
-Now, _CUBE_ is the bottleneck. See the section on [Performance Tuning](#performance-tuning) below.
+Prior to `oxidicom` version 2, [CUBE was the bottleneck](https://github.com/FNNDSC/ChRIS_ultron_backEnd/issues/546).
+Since `oxidicom` version 2, the _ChRIS_ architecture is fully able to keep up with user requests and
+the data being sent to it from PACS, being capable of receiving >1,000s of DICOM files per second (with good hardware).
 
 ## Environment Variables
 
@@ -41,9 +43,10 @@ The other variables are either for optional features or performance tuning.
 | `OXIDICOM_FILES_ROOT`            | (required) Path to where _CUBE_'s storage is mounted                                                |
 | `OXIDICOM_SCP_AET`               | DICOM AE title (hospital PACS pushing to `oxidicom` should be configured to push to this name)      |
 | `OXIDICOM_SCP_STRICT`            | Whether receiving PDUs must not surpass the negotiated maximum PDU length.                          |
-| `OXIDICOM_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                  |
 | `OXIDICOM_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                   |                                                      
-| `OXIDICOM_PACS_ADDRESS`          | PACS server addresses (optional, see [PACS address configuration](#pacs-address-configuration))     |
+| `OXIDICOM_SCP_PROMISCUOUS`       | Whether to accept unknown abstract syntaxes.                                                        |
+| `OXIDICOM_SCP_MAX_PDU_LENGTH`    | Maximum PDU length                                                                                  |
+| `OXIDICOM_PACS_ADDRESS`          | PACS server addresses (recommended, see [PACS address configuration](#pacs-address-configuration))  |
 | `OXIDICOM_LISTENER_THREADS`      | Maximum number of concurrent SCU clients to handle. (see [Performance Tuning](#performance-tuning)) |
 | `OXIDICOM_LISTENER_PORT`         | TCP port number to listen on                                                                        |
 | `OXIDICOM_VERBOSE`               | Set as `yes` to show debugging messages                                                             |
@@ -68,22 +71,13 @@ an implementation detail: the Rust ecosystem suffers from a sync/async divide.)
 
 ## Failure Modes
 
-- An error with an individual instance does not terminate the association
-  (meaning, subsequent instances will still have the chance to be received).
-- Currently, the following tags are required:
-  StudyInstanceUID, SeriesInstanceUID, SOPInstanceUID, PatientID, and StudyDate.
-  If any of the tags are missing, the DICOM instance will not be stored.
-- Files are first written to storage, then registered to CUBE. If CUBE does not
-  accept the file registration, the file will still remain in storage.
-- If an unknown SOP class UID is encountered, the SCU will (probably) choose to abort
-  the association. In this case, `oxidicom` will be aware that the abortion and the
-  OpenTelemetry span for this association will have `status=error`. This can maybe
-  be resolved, see https://github.com/Enet4/dicom-rs/issues/477
-- If _CUBE_'s response times are slow, then `oxidicom` will experience backpressure
-  and its memory usage will start to balloon.
-- If a PACS retrieve was triggered twice, even though the first one was successful,
-  the file will be overwritten in CUBE's storage, but the second registration will fail.
-  Assuming the file sent by PACS did not change, the operation is idempotent.
+`oxidicom` is designed to be fault-tolerant. Furthermore, it makes few assumptions
+about whether the PACS is well-behaved. For instance, an error with an individual
+DICOM instance does not terminate the association (meaning, subsequent DICOM
+instances will still have the chance to be received).
+
+Receiving the same DICOM data is idempotent. The database row will not be overwritten.
+The duplicate DICOMs will be indicated in a corresponding OpenTelemetry span attribute.
 
 ## "Oxidicom Custom Metadata" Spec
 
@@ -101,7 +95,7 @@ under the space `SERVICES/PACS/org.fnndsc.oxidicom`. See [CUSTOM_SPEC.md](./CUST
 The environment variable `OXIDICOM_PACS_ADDRESS` should be a dictionary of AE titles to their IPv4 sockets
 (IP address and port number).
 
-The PACS server address for a client AE title is used to lookup the `NumberOfSeriesRelatedInstances`.
+The PACS server address for a client AE title is used to look up the `NumberOfSeriesRelatedInstances`.
 For example, suppose `OXIDICOM_PACS_ADDRESS={BCH="1.2.3.4:4242"}`. When we receive DICOMs from `BCH`, `oxidicom`
 will do a C-FIND to `1.2.3.4:4242`, asking them what is the `NumberOfSeriesRelatedInstances` for the
 received DICOMs. When we receive DICOMs from `MGH`, the PACS address is unknown, so `oxidicom` will set
@@ -124,7 +118,7 @@ You need to have installed:
 Simply run
 
 ```shell
-just
+just test
 ```
 
 The `just` command, without arguments, will:
@@ -132,7 +126,7 @@ The `just` command, without arguments, will:
 1. Run Orthanc
 2. Download sample data
 3. Push sample data into Orthanc
-4. Run integration tests
+4. Run unit and integration tests
 
 ### Observability
 
@@ -142,7 +136,7 @@ The `just` command, without arguments, will:
 ### Usage of `opentelemetry` v.s. `tracing` in the codebase
 
 `dicom-rs` itself uses the `tracing` crate, though for the spans described above,
-I decided to use the `opentelemetry` crate.
+I decided to use the `opentelemetry` crate for spans, and `tracing` for logs.
 
 ### Sample DICOM files
 
