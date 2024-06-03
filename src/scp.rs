@@ -22,7 +22,7 @@ use ulid::Ulid;
 
 use crate::association_error::{AssociationError, AssociationError::*};
 use crate::dicomrs_settings::{ClientAETitle, OurAETitle};
-use crate::event::AssociationEvent;
+use crate::enums::AssociationEvent;
 
 /// Handle an "association" from an "SCU" (i.e. handle when someone is trying to give us DICOM files).
 ///
@@ -173,9 +173,6 @@ pub fn handle_association(
                         channel
                             .send(AssociationEvent::DicomInstance {
                                 ulid,
-                                // annoying note to self: sending aec.clone() through the channel
-                                // makes the code easier, even though it's slightly bad API design.
-                                aec: aec.clone(),
                                 dcm: file_obj,
                             })
                             .unwrap();

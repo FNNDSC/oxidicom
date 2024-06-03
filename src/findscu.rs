@@ -29,21 +29,29 @@ pub(crate) struct FindScuParameters {
 }
 
 impl FindScuParameters {
-    pub(crate) fn get_number_of_series_related_instances(&self) -> Option<usize> {
+    pub(crate) fn get_number_of_series_related_instances(&self) -> Result<usize, ()> {
         let tracer = global::tracer(env!("CARGO_PKG_NAME"));
         tracer.in_span("findscu", |cx| {
             cx.span().set_attributes(self.to_otel_attributes());
             match self.try_get_number_of_series_related_instances(&cx) {
                 Ok(num) => {
                     cx.span().set_status(Status::Ok);
-                    Some(num)
+                    Ok(num)
                 }
                 Err(err) => {
-                    tracing::error!("{:?}", &err);
+                    tracing::error!(
+                        association_ulid = self.ulid.to_string(),
+                        pacs_address = &self.pacs_address,
+                        aec = self.aec.as_str(),
+                        aet = self.aet.as_str(),
+                        StudyInstanceUID = &self.study_instance_uid,
+                        SeriesInstanceUID = &self.series_instance_uid,
+                        message = err.to_string(),
+                    );
                     cx.span().set_status(Status::Error {
                         description: Cow::Owned(err.to_string()),
                     });
-                    None
+                    Err(())
                 }
             }
         })
@@ -219,7 +227,8 @@ impl FindScuParameters {
             .filter(|dcm| {
                 dcm.get(tags::SERIES_INSTANCE_UID)
                     .and_then(|ele| ele.string().ok())
-                    .is_some_and(|uid| uid == &self.series_instance_uid)
+                    .map(|uid| uid.replace('\0', ""))
+                    .is_some_and(|uid| uid.trim() == &self.series_instance_uid)
             })
             .find_map(|dcm| {
                 dcm.get(tags::NUMBER_OF_SERIES_RELATED_INSTANCES)

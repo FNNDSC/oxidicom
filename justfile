@@ -2,6 +2,10 @@
 check:
     ./run.sh cargo check
 
+# Run `cargo clippy`
+clippy:
+    ./run.sh cargo clippy
+
 # Run tests.
 #
 # Examples:

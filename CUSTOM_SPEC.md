@@ -36,7 +36,7 @@ The TCP connection made by the hospital PACS to `oxidicom` in which DICOM files 
 **DICOM association.** During an association, we typically receive one series, which is typically comprised of
 one or more DICOM instances. In reality, the PACS could possibly send us a study, a patient, anything, or nothing.
 
-## Association UUID Path
+## Association ULID Path
 
 We typically assume some properties are upheld by the DICOM protocol:
 
@@ -66,29 +66,29 @@ The `ABSOLUTE_SERIES_DIR` is `SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-200
 After trying to retrieve the series once, you will find the following files to be created:
 
 ```
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/NumberOfSeriesRelatedInstances=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/OxidicomAttemptedPushCount=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/NumberOfSeriesRelatedInstances=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/OxidicomAttemptedPushCount=192
 ```
 
 Let's say that you attempt to retrieve the series a second time. You will now find:
 
 ```
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/c9af1e71-bf26-46fe-a821-6aa377027a8b/NumberOfSeriesRelatedInstances=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/c9af1e71-bf26-46fe-a821-6aa377027a8b/OxidicomAttemptedPushCount=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/NumberOfSeriesRelatedInstances=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/OxidicomAttemptedPushCount=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WN2KMQ36T7E85SVX6G4V4/NumberOfSeriesRelatedInstances=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WN2KMQ36T7E85SVX6G4V4/OxidicomAttemptedPushCount=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/NumberOfSeriesRelatedInstances=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/OxidicomAttemptedPushCount=192
 ```
 
 What if the hospital PACS _misbehaves_, sending us a different `NumberOfSeriesRelatedInstances` on the third retrieve attempt?
 You will find:
 
 ```
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/28718a6f-23bf-4770-b4da-a8b3eae8907d/NumberOfSeriesRelatedInstances=43
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/28718a6f-23bf-4770-b4da-a8b3eae8907d/OxidicomAttemptedPushCount=43
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/c9af1e71-bf26-46fe-a821-6aa377027a8b/NumberOfSeriesRelatedInstances=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/c9af1e71-bf26-46fe-a821-6aa377027a8b/OxidicomAttemptedPushCount=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/NumberOfSeriesRelatedInstances=192
-SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/d72b714f-c001-487d-b441-70a4f4f69174/OxidicomAttemptedPushCount=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WP273YRHSH33TC3BNDJEB/NumberOfSeriesRelatedInstances=43
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WP273YRHSH33TC3BNDJEB/OxidicomAttemptedPushCount=43
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WN2KMQ36T7E85SVX6G4V4/NumberOfSeriesRelatedInstances=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WN2KMQ36T7E85SVX6G4V4/OxidicomAttemptedPushCount=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/NumberOfSeriesRelatedInstances=192
+SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/HOSPITAL_PACS/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7TF03EZD364005NP332RBQ/OxidicomAttemptedPushCount=192
 ```
 
 ## Key-Value Pairs
@@ -117,7 +117,7 @@ Or, leave out the `&ProtocolName=` query to get both `NumberOfSeriesRelatedInsta
             "url": "https://example.org/api/v1/pacsfiles/1747/",
             "id": 1747,
             "creation_date": "2024-03-20T17:22:41.432808-04:00",
-            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/ba302287-cb03-4cdd-a01e-9027c8dbfee7/OxidicomAttemptedPushCount=192",
+            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WP273YRHSH33TC3BNDJEB/OxidicomAttemptedPushCount=192",
             "fsize": 0,
             "PatientID": "1449c1d",
             "PatientName": "",
@@ -139,7 +139,7 @@ Or, leave out the `&ProtocolName=` query to get both `NumberOfSeriesRelatedInsta
             "url": "https://example.org/api/v1/pacsfiles/1553/",
             "id": 1553,
             "creation_date": "2024-03-20T17:22:17.754581-04:00",
-            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/ba302287-cb03-4cdd-a01e-9027c8dbfee7/NumberOfSeriesRelatedInstances=192",
+            "fname": "SERVICES/PACS/org.fnndsc.oxidicom/SERVICES/PACS/OXITESTORTHANC/1449c1d-anonymized-20090701/MR-Brain_w_o_Contrast-98edede8b2-20130308/5-SAG_MPRAGE_220_FOV-a27cf06/01HZ7WP273YRHSH33TC3BNDJEB/NumberOfSeriesRelatedInstances=192",
             "fsize": 0,
             "PatientID": "1449c1d",
             "PatientName": "",

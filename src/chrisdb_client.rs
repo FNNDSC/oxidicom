@@ -258,7 +258,6 @@ async fn query_for_existing(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dicomrs_settings::ClientAETitle;
     use chris::{search::GetOnlyError, ChrisClient};
     use figment::Figment;
     use futures::prelude::*;
@@ -479,7 +478,7 @@ mod tests {
             .await?;
 
         // assert reregistering files should be idempotent
-        // TODO assert creation_date and other fields did not change
+        // it would be nice to assert creation_date and other fields did not change
         db_client.register(&requests).await?;
         let count = chris_client
             .pacsfiles()

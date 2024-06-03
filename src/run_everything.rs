@@ -1,3 +1,4 @@
+use crate::association_series_state_loop::association_series_state_loop;
 use crate::chrisdb_client::CubePostgresClient;
 use crate::get_config;
 use sqlx::postgres::PgPoolOptions;
@@ -6,8 +7,9 @@ use tokio::sync::mpsc;
 
 use crate::listener_tcp_loop::dicom_listener_tcp_loop;
 use crate::registerer::cube_pacsfile_registerer;
+use crate::registration_synchronizer::registration_synchronizer;
 use crate::settings::OxidicomEnvOptions;
-use crate::writer::dicom_storage_writer;
+use futures::FutureExt;
 
 /// Calls [run_everything] using configuration from environment variables.
 ///
@@ -43,7 +45,8 @@ async fn run_everything(
         .await?;
     let cubedb_client = CubePostgresClient::new(db_pool, None);
 
-    let (tx_dcm, rx_dcm) = mpsc::unbounded_channel();
+    let (tx_association, rx_association) = mpsc::unbounded_channel();
+    let (tx_storetasks, rx_storetasks) = mpsc::unbounded_channel();
     let (tx_register, rx_register) = mpsc::unbounded_channel();
     let listener_handle = tokio::task::spawn_blocking(move || {
         dicom_listener_tcp_loop(
@@ -52,12 +55,15 @@ async fn run_everything(
             finite_connections,
             listener_threads.get(),
             scp_max_pdu_length,
-            tx_dcm,
+            tx_association,
             pacs_address,
         )
     });
+
     tokio::try_join!(
-        dicom_storage_writer(rx_dcm, tx_register, files_root),
+        association_series_state_loop(rx_association, tx_storetasks, files_root)
+            .map(|r| r.unwrap()),
+        registration_synchronizer(rx_storetasks, tx_register),
         cube_pacsfile_registerer(rx_register, cubedb_client, db.batch_size.get())
     )?;
     listener_handle.await?

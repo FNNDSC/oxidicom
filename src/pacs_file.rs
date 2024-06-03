@@ -1,9 +1,6 @@
-//! Request and response bodies for the CUBE `api/v1/pacsfiles/` API endpoint.
+//! ChRIS backend PACSFile object representation.
 //!
 //! ## Notes
-//!
-//! CUBE will normalize the DICOM DA format "YYYYMMDD" to "YYYY-MM-DD"
-//! (so it's not something we need to worry about).
 //!
 //! `PatientAge` should be in days.
 //! https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/pypx/register.py#L459-L465

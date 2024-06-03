@@ -1,5 +1,5 @@
 use crate::dicomrs_settings::{ClientAETitle, DicomRsSettings};
-use crate::event::AssociationEvent;
+use crate::enums::AssociationEvent;
 use crate::scp::handle_association;
 use crate::thread_pool::ThreadPool;
 use opentelemetry::trace::{Status, TraceContextExt, Tracer};

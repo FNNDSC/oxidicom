@@ -11,15 +11,6 @@ pub enum DicomStorageError {
 
     #[error(transparent)]
     Write(#[from] dicom::object::WriteError),
-
-    #[error(transparent)]
-    MissingTag(#[from] RequiredTagError),
-}
-
-impl From<DicomRequiredTagError> for DicomStorageError {
-    fn from(value: DicomRequiredTagError) -> Self {
-        DicomStorageError::MissingTag(value.error)
-    }
 }
 
 #[derive(thiserror::Error, Debug)]

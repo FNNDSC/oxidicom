@@ -1,8 +1,9 @@
 #![allow(non_snake_case)]
 
+use ulid::Ulid;
+
 use crate::dicomrs_settings::ClientAETitle;
 use crate::pacs_file::PacsFileRegistrationRequest;
-use ulid::Ulid;
 
 /// The set of fields of a [PacsFileRegistrationRequest] which uniquely identifies a DICOM series
 /// in CUBE.
@@ -55,7 +56,7 @@ pub const OXIDICOM_CUSTOM_PACS_NAME: &str = "org.fnndsc.oxidicom";
 
 impl SeriesKeySet {
     /// Serialize a key-value pair from an association as an "Oxidicom Custom Metadata" file.
-    pub(crate) fn to_oxidicom_custom_pacsfile(
+    pub(crate) fn into_oxidicom_custom_pacsfile(
         self,
         association_ulid: Ulid,
         key: &str,
