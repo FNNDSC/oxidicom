@@ -1,9 +1,5 @@
 mod association_error;
-mod chrisdb_client;
-// mod cube_sender;
-// mod custom_metadata;
 mod association_series_state_loop;
-mod batcher;
 mod config;
 mod dicomrs_settings;
 mod enums;
@@ -13,7 +9,7 @@ mod listener_tcp_loop;
 mod pacs_file;
 mod patient_age;
 mod private_sop_uids;
-mod registerer;
+mod notifier;
 mod registration_synchronizer;
 mod run_everything;
 mod sanitize;

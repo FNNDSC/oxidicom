@@ -5,8 +5,6 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
-use crate::batcher::Batcher;
-use crate::chrisdb_client::{CubePostgresClient, PacsFileDatabaseError};
 use crate::error::HandleLoopError;
 use crate::pacs_file::PacsFileRegistrationRequest;
 
@@ -14,24 +12,20 @@ use crate::pacs_file::PacsFileRegistrationRequest;
 ///
 /// - Received `Some`: add item to the batch. When batch is full, give everything to the `client`
 /// - Received `None`: flush current batch to the `client`
-pub async fn cube_pacsfile_registerer(
+pub async fn cube_pacsfile_notifier(
     mut receiver: UnboundedReceiver<Option<PacsFileRegistrationRequest>>,
-    client: CubePostgresClient,
-    batch_size: usize,
+    celery: Arc<celery::Celery>,
 ) -> Result<(), HandleLoopError> {
     // We have two loops:
     // 1. The receiver loop receives DICOM metadata from the receiver, and adds them to a batch.
     //    When the batch is full, we create a task to send the DICOM metadata to the database.
     // 2. The joiner_loop simply blocks until every task is complete.
-    let client = Arc::new(client);
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let receiver_loop = async {
-        let mut batches = Batcher::new(batch_size);
         while let Some(event) = receiver.recv().await {
-            batches = handle_event(event, batches, &client, &tx).unwrap();
+            handle_event(event, &celery, &tx).unwrap();
         }
         drop(tx);
-        flush_to_database(batches, client).await
     };
 
     // join tasks and take note of any errors.
@@ -64,8 +58,7 @@ type RegistrationTask = JoinHandle<Result<(), PacsFileDatabaseError>>;
 /// Returns the batch's next state.
 fn handle_event(
     event: Option<PacsFileRegistrationRequest>,
-    prev: Batcher<PacsFileRegistrationRequest>,
-    client: &Arc<CubePostgresClient>,
+    client: &Arc<celery::Celery>,
     tx: &UnboundedSender<RegistrationTask>,
 ) -> Result<Batcher<PacsFileRegistrationRequest>, SendError<RegistrationTask>> {
     let (next, full_batch) = match event {

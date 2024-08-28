@@ -1,12 +1,10 @@
 use crate::association_series_state_loop::association_series_state_loop;
-use crate::chrisdb_client::CubePostgresClient;
 use crate::get_config;
-use sqlx::postgres::PgPoolOptions;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use tokio::sync::mpsc;
 
 use crate::listener_tcp_loop::dicom_listener_tcp_loop;
-use crate::registerer::cube_pacsfile_registerer;
+use crate::notifier::cube_pacsfile_notifier;
 use crate::registration_synchronizer::registration_synchronizer;
 use crate::settings::OxidicomEnvOptions;
 use futures::FutureExt;
@@ -29,21 +27,15 @@ pub async fn run_everything_from_env(finite_connections: Option<usize>) -> anyho
 /// 3. A database connection pool which registers written files
 async fn run_everything(
     OxidicomEnvOptions {
-        db,
-        files_root,
-        scp,
-        scp_max_pdu_length,
-        pacs_address,
-        listener_threads,
-        listener_port,
+        amqp_address, files_root, progress_nats_address, progress_interval, scp, scp_max_pdu_length, pacs_address, listener_threads, listener_port
     }: OxidicomEnvOptions,
     finite_connections: Option<usize>,
 ) -> anyhow::Result<()> {
-    let db_pool = PgPoolOptions::new()
-        .max_connections(db.pool.get())
-        .connect(&db.connection)
-        .await?;
-    let cubedb_client = CubePostgresClient::new(db_pool, None);
+    let celery = celery::app!(
+        broker = AMQPBroker { amqp_address },
+        tasks = [crate::registration_task::register_pacs_series],
+        task_routes = [ "pacsfiles.tasks.register_pacs_series" => "main2" ],
+    ).await?;
 
     let (tx_association, rx_association) = mpsc::unbounded_channel();
     let (tx_storetasks, rx_storetasks) = mpsc::unbounded_channel();
@@ -64,7 +56,7 @@ async fn run_everything(
         association_series_state_loop(rx_association, tx_storetasks, files_root)
             .map(|r| r.unwrap()),
         registration_synchronizer(rx_storetasks, tx_register),
-        cube_pacsfile_registerer(rx_register, cubedb_client, db.batch_size.get())
+        cube_pacsfile_notifier(rx_register, celery)
     )?;
     listener_handle.await?
 }

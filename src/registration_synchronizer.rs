@@ -10,7 +10,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
 /// `registration_synchronizer` is intended as a way to synchronize requests before they are
-/// sent to [crate::registerer::cube_pacsfile_registerer]. It guarantees that the "flush" command
+/// sent to [crate::notifier::cube_pacsfile_notifier]. It guarantees that the "flush" command
 /// can be invoked after all tasks for an association are complete.
 pub(crate) async fn registration_synchronizer(
     mut receiver: UnboundedReceiver<(SeriesKeySet, PendingRegistration)>,

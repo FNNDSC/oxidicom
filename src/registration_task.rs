@@ -9,7 +9,7 @@ use std::num::NonZeroUsize;
 /// A function stub with the same signature as the `register_pacs_series` celery task
 /// in *CUBE*'s Python code.
 #[celery::task(name = "pacsfiles.tasks.register_pacs_series")]
-fn register_pacs_series(
+pub(crate) fn register_pacs_series(
     patient_id: String,
     patient_name: String,
     study_date: String,
