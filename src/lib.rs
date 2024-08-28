@@ -22,6 +22,7 @@ mod series_key_set;
 mod settings;
 mod thread_pool;
 mod transfer;
+mod registration_task;
 
 pub use config::get_config;
 pub use dicomrs_settings::DicomRsSettings;
