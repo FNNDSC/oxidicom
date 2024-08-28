@@ -4,43 +4,24 @@
 [![MIT License](https://img.shields.io/github/license/fnndsc/oxidicom)](https://github.com/FNNDSC/oxidicom/blob/master/LICENSE)
 [![CI](https://github.com/FNNDSC/oxidicom/actions/workflows/ci.yml/badge.svg)](https://github.com/FNNDSC/oxidicom/actions/workflows/ci.yml)
 
-`oxidicom` is a high-performance DICOM receiver for the
+_oxidicom_ is a high-performance DICOM receiver for the
 [_ChRIS_ backend](https://github.com/FNNDSC/ChRIS_ultron_backEnd) (CUBE).
-It **partially** replaces [pfdcm](https://github.com/FNNDSC/pfdcm).
 
-More technically, `oxidicom` implements a DICOM C-STORE service class provider (SCP),
-a "server," which listens for incoming DICOM files. For every DICOM file received,
-it writes it to the storage of _CUBE_ and "registers" the file with _CUBE_.
-
-## Improvements over pfdcm
-
-Rewriting the functionality of `pfdcm` in Rust and with a modern design has led to several advantages:
-
-- Performance: registration of retrieved DICOM files to _CUBE_ happens in real-time instead of being
-  done in stages and polled until completion.
-- Simplicity: client can simply check for the number of PACS files existing in CUBE (for a given
-  SeriesInstanceUID) instead of having to ask pfdcm for intermediate progress information (and having
-  to poll pfdcm to completion).
-- Observability: `oxidicom` outputs structured logs and also sends traces to OpenTelemetry collector.
-- Scalability: manual implementation of C-STORE makes `oxidicom` horizontally scalable (opposed to
-  relying on dcmtk's `storescp`, which is harder to scale because it spawns subprocesses).
-
-Prior to `oxidicom`, `pfdcm` was the major bottleneck in the _ChRIS_ PACS query/retrieval architecture.
-Prior to `oxidicom` version 2, [CUBE was the bottleneck](https://github.com/FNNDSC/ChRIS_ultron_backEnd/issues/546).
-Since `oxidicom` version 2, the _ChRIS_ architecture is fully able to keep up with user requests and
-the data being sent to it from PACS, being capable of receiving >1,000s of DICOM files per second (with good hardware).
+More technically, _oxidicom_ implements a DICOM C-STORE service class provider (SCP),
+meaning it is a "server" which receives DICOM data over TCP. For every DICOM file received,
+_oxidicom_ writes it to the storage of _CUBE_ and "registers" the file with _CUBE_.
 
 ## Environment Variables
 
-Only `OXIDICOM_DB_CONNECTION` and `OXIDICOM_FILES_ROOT` are required. Those configure how oxidicom connects to CUBE.
+Only `OXIDICOM_AMQP_ADDRESS` and `OXIDICOM_FILES_ROOT` are required. Those configure how oxidicom connects to _CUBE_.
 The other variables are either for optional features or performance tuning.
 
 | Name                             | Description                                                                                         |
 |----------------------------------|-----------------------------------------------------------------------------------------------------|
-| `OXIDICOM_DB_CONNECTION`         | (required) PostgreSQL connection string                                                             |
-| `OXIDICOM_DB_POOL`               | Database connection pool size                                                                       |
-| `OXIDICOM_DB_BATCH_SIZE`         | Maximum number of files to register per request                                                     |
+| `OXIDICOM_AMQP_ADDRESS`          | (required) AMQP address of the RabbitMQ used by _CUBE_'s celery workers                             |
 | `OXIDICOM_FILES_ROOT`            | (required) Path to where _CUBE_'s storage is mounted                                                |
+| `OXIDICOM_PROGRESS_NATS_ADDRESS` | (optional) NATS server where to send progress messages                                              |
+| `OXIDICOM_PROGRESS_INTERVAL_MS`  | Minimum delay between progress messages per study                                                   |
 | `OXIDICOM_SCP_AET`               | DICOM AE title (hospital PACS pushing to `oxidicom` should be configured to push to this name)      |
 | `OXIDICOM_SCP_STRICT`            | Whether receiving PDUs must not surpass the negotiated maximum PDU length.                          |
 | `OXIDICOM_SCP_UNCOMPRESSED_ONLY` | Only accept native/uncompressed transfer syntaxes                                                   |                                                      
@@ -62,33 +43,32 @@ Behind the scenes, _oxidicom_ has three components connected by asynchronous cha
 
 1. listener: receives DICOM objects over TCP
 2. writer: writes DICOM objects to storage
-3. registerer: writes DICOM metadata to CUBE's database
+3. sender: emits progress messages to NATS and series registration jobs to celery
 
 `OXIDICOM_LISTENER_THREADS` controls the parallelism of the listener, whereas
 `TOKIO_WORKER_THREADS` controls the async runtime's thread pool which is shared
 between the writer and registerer. (The reason why we have two thread pools is
 an implementation detail: the Rust ecosystem suffers from a sync/async divide.)
 
+## Scaling
+
+Large amounts of incoming data can be handled by horizontally scaling _oxidicom_.
+It is easy to increase its number of replicas. However, the task queue for
+registering the data to _CUBE_ will fill up. If you try to increase the number of
+_CUBE_ celery workers, then the PostgreSQL database will get strained.
+
 ## Failure Modes
 
-`oxidicom` is designed to be fault-tolerant. Furthermore, it makes few assumptions
-about whether the PACS is well-behaved. For instance, an error with an individual
+_oxidicom_ is designed to be fault-tolerant. For instance, an error with an individual
 DICOM instance does not terminate the association (meaning, subsequent DICOM
 instances will still have the chance to be received).
 
-Receiving the same DICOM data is idempotent. The database row will not be overwritten.
-The duplicate DICOMs will be indicated in a corresponding OpenTelemetry span attribute.
+No assumptions are made about the PACS being well-behaved. _oxidicom_ does not care
+if the PACS sends illegal data (e.g. the wrong number of DICOM instances for a series).
 
-## "Oxidicom Custom Metadata" Spec
-
-The _ChRIS_ API does not provide any mechanism for knowing when a DICOM series has been pulled in completion.
-A DICOM series contains 0 or more DICOM instances. _CUBE_ tracks each DICOM instance individually, but _CUBE_
-does not track how many instances _should_ there be for a series (`NumberOfSeriesRelatedInstances`).
-
-https://github.com/FNNDSC/ChRIS_ultron_backEnd/issues/544
-
-As a hacky workaround for this shortcoming, `oxidicom` will push dummy files into _CUBE_ as PACSFiles
-under the space `SERVICES/PACS/org.fnndsc.oxidicom`. See [CUSTOM_SPEC.md](./CUSTOM_SPEC.md).
+Receiving the same DICOM data more than once will overwrite the existing file in storage,
+and another task to register the series will be sent to _CUBE_'s celery workers. _CUBE_'s
+workers are going to throw an error when this happens. The overall behavior is idempotent.
 
 ## PACS Address Configuration
 
