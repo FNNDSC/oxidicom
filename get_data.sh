@@ -12,8 +12,28 @@ until instances=$(curl -sf http://localhost:8042/instances); do
 done
 echo
 
-if [ "$(jq -r length <<< "$instances")" != '0' ]; then
-  echo 'Already have data'
+get_instance_counts () {
+  curl -sf http://localhost:8042/series \
+    | jq -r '.[]' \
+    | parallel '
+        curl -sf http://localhost:8042/series/{} \
+          | jq -r ".MainDicomTags.SeriesInstanceUID + \" \" + (.Instances | length | tostring)"' \
+    | sort
+}
+
+series_has_data () {
+  echo "$1" | grep -qF "$2 $3" || (echo "Error: $2 has wrong number of DICOM instances"; return 1)
+}
+
+check_has_data () {
+  local data="$(get_instance_counts)"
+  echo "$data"
+  series_has_data "$data" '1.2.826.0.1.3680043.2.1143.515404396022363061013111326823367652' 384
+  series_has_data "$data" '1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0'      192
+}
+
+if check_has_data > /dev/null; then
+  echo "Already have data"
   exit 0
 fi
 
@@ -30,3 +50,5 @@ find -type f -iname '*.dcm' \
 
 cd /
 rm -rf $tmpdir
+
+check_has_data
