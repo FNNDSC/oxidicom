@@ -18,6 +18,8 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-24.04
+    env:
+      CARGO_TERM_COLOR: always
     steps:
     - uses: actions/checkout@v4
     - name: Start services
