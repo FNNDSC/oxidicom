@@ -3,6 +3,7 @@
 [![GitHub tag](https://img.shields.io/github/v/tag/FNNDSC/oxidicom?filter=v*.*.*&label=version)](https://github.com/FNNDSC/oxidicom/pkgs/container/oxidicom)
 [![MIT License](https://img.shields.io/github/license/fnndsc/oxidicom)](https://github.com/FNNDSC/oxidicom/blob/master/LICENSE)
 [![CI](https://github.com/FNNDSC/oxidicom/actions/workflows/ci.yml/badge.svg)](https://github.com/FNNDSC/oxidicom/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/FNNDSC/oxidicom/graph/badge.svg?token=24J11SWJEA)](https://codecov.io/gh/FNNDSC/oxidicom)
 
 _oxidicom_ is a high-performance DICOM receiver for the
 [_ChRIS_ backend](https://github.com/FNNDSC/ChRIS_ultron_backEnd) (CUBE).
