@@ -15,8 +15,8 @@ echo
 get_instance_counts () {
   curl -sf http://localhost:8042/series \
     | jq -r '.[]' \
-    | parallel '
-        curl -sf http://localhost:8042/series/{} \
+    | xargs -I _ sh -c '
+        curl -sf http://localhost:8042/series/_ \
           | jq -r ".MainDicomTags.SeriesInstanceUID + \" \" + (.Instances | length | tostring)"' \
     | sort
 }
@@ -46,7 +46,7 @@ for url in "${GITHUB_TARBALLS[@]}"; do
 done
 
 find -type f -iname '*.dcm' \
-  | parallel --progress -j 4 "curl -sfX POST http://localhost:8042/instances -H Expect: -H 'Content-Type: application/dicom' --data-binary @'{}' -o /dev/null"
+  | xargs -I _ curl -sfX POST http://localhost:8042/instances -H Expect: -H 'Content-Type: application/dicom' --data-binary @_ -o /dev/null
 
 cd /
 rm -rf $tmpdir
