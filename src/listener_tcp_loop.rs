@@ -26,7 +26,9 @@ where
     F: FnOnce(SocketAddrV4),
 {
     let listener = TcpListener::bind(address)?;
-    if let Some(f) = on_start { f(address) };
+    if let Some(f) = on_start {
+        f(address)
+    };
 
     let mut pool = ThreadPool::new(n_threads, "dicom_listener");
     let options = Arc::new(config.into());

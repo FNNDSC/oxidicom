@@ -1,54 +1,53 @@
 mod expected;
 mod model;
 
-pub use expected::EXPECTED_SERIES;
-use std::collections::HashSet;
-
 use crate::assertions::model::SeriesParams;
-use camino::Utf8Path;
+use async_walkdir::WalkDir;
+use camino::{Utf8Path, Utf8PathBuf};
 use celery::broker::{AMQPBrokerBuilder, BrokerBuilder};
 use celery::prelude::BrokerError;
 use celery::protocol::MessageBody;
+pub use expected::EXPECTED_SERIES;
 use futures::{stream, StreamExt, TryStreamExt};
 use oxidicom::register_pacs_series;
+use std::collections::HashSet;
 
 pub async fn assert_files_stored(storage_path: &Utf8Path) {
-    stream::iter(&*EXPECTED_SERIES)
-        .for_each_concurrent(EXPECTED_SERIES.len(), |series| {
-            assert_series_path(storage_path, series)
-        })
-        .await;
+    let (expected, actual) = tokio::join!(expected_files(), find_files(storage_path));
+    pretty_assertions::assert_eq!(expected, actual)
 }
 
-async fn assert_series_path(storage_path: &Utf8Path, series: &SeriesParams) {
-    let series_dir = storage_path.join(&series.path);
-    let count = tokio::fs::read_dir(series_dir)
-        .await
-        .map(tokio_stream::wrappers::ReadDirStream::new)
-        .unwrap()
-        .map(|result| async {
-            let entry = result.unwrap();
-            assert!(
-                entry.file_type().await.unwrap().is_file(),
-                "{:?} is not a file. PACSSeries folder may only contain files.",
-                entry.path()
-            );
-            assert_eq!(
-                entry
-                    .path()
-                    .extension()
-                    .expect("Found file without file extension")
-                    .to_str()
-                    .expect("Found file with invalid UTF-8 file extension"),
-                ".dcm",
-                "{:?} does not have a .dcm file extension.",
-                entry.path()
-            );
-            entry
+async fn expected_files() -> Vec<String> {
+    let path = Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("expected_files.txt");
+    let content = tokio::fs::read_to_string(path).await.unwrap();
+    content
+        .split("\n")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+async fn find_files(storage_path: &Utf8Path) -> Vec<String> {
+    let mut files: Vec<String> = WalkDir::new(storage_path)
+        .try_filter_map(|entry| async move {
+            if entry.file_type().await.unwrap().is_file() {
+                let path = Utf8PathBuf::from_path_buf(entry.path())
+                    .map(|p| pathdiff::diff_utf8_paths(p, storage_path).unwrap())
+                    .map(|p| p.into_string())
+                    .expect("Invalid UTF-8 path found");
+                Ok(Some(path))
+            } else {
+                Ok(None)
+            }
         })
-        .count()
-        .await;
-    assert_eq!(count, series.ndicom);
+        .try_collect()
+        .await
+        .unwrap();
+    files.sort();
+    files
 }
 
 pub async fn assert_rabbitmq_messages(address: &str, queue_name: &str) {
