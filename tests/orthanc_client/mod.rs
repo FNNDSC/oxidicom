@@ -91,6 +91,7 @@ struct StoreRequest {
     timeout: u32,
 }
 
+#[allow(unused)]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct StoreResponse {

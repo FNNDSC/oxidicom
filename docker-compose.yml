@@ -1,128 +1,33 @@
-# You *must* use `just` to run docker compose commands.
-# Running docker compose commands directly is not recommended.
-
 services:
+  rabbitmq:
+    image: docker.io/library/rabbitmq:3
+    ports:
+      - "5672:5672"
   orthanc:
     image: docker.io/jodogne/orthanc-plugins:1.12.3
     volumes:
       - ./orthanc.json:/etc/orthanc/orthanc.json:ro
       - orthanc:/var/lib/orthanc/db
-    ports:
-      - "4242:4242"
-      - "8042:8042"
-    networks:
-      test-oxidicom:
+    network_mode: "host"
+    healthcheck:
+      test: ["CMD", "wget", "-O", "/dev/null", "http://localhost:8042/patients"]
+      interval: 2s
+      timeout: 4s
+      retries: 3
+      start_period: 30s
   get-data:
-    build:
-      dockerfile_inline: |
-        FROM docker.io/library/alpine:latest
-        RUN apk add parallel curl jq bash
+    image: ghcr.io/fnndsc/utils:7c65939
     command: /get_data.sh
-    tty: true
-    attach: true
     volumes:
       - ./get_data.sh:/get_data.sh:ro
     depends_on:
       orthanc:
+        condition: service_healthy
+      rabbitmq:
         condition: service_started
-    networks:
-      test-oxidicom:
     profiles:
-      - oxidicom
-  oxidicom:
-    image: docker.io/library/rust:1.78-bookworm
-    user: 1001:0
-    group_add:
-      - ${GID-0}
-    volumes: &RUST_VOLUMES
-      - cargo-home:/cargo
-      - cargo-target:/target
-      - ./:/src:ro
-      - minichris-files:/data:rw
-    working_dir: /src
-    environment:
-      OXIDICOM_FILES_ROOT: /data
-      OXIDICOM_DB_CONNECTION: postgresql://chris:chris1234@db:5432/chris
-
-      OXIDICOM_SCP_AET: OXIDICOMTEST
-      OXIDICOM_PACS_ADDRESS: '{OXITESTORTHANC="orthanc:4242"}'
-      OXIDICOM_LISTENER_PORT: 11112
-      OXIDICOM_LISTENER_THREADS: 8
-      OXIDICOM_VERBOSE: "yes"
-      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
-      OTEL_RESOURCE_ATTRIBUTES: service.name=oxidicom-test
-
-      OXIDICOM_TEST_URL: http://chris:8000/api/v1/
-      OXIDICOM_TEST_USERNAME: chris
-      OXIDICOM_TEST_PASSWORD: chris1234
-
-      CARGO_TARGET_DIR: /target
-      CARGO_HOME: /cargo
-      CARGO_TERM_COLOR: always
-      # RUST_BACKTRACE: full
-
-      # DATABASE_URL must be set for the sqlx crate to validate queries at compile time.
-      # see https://docs.rs/sqlx/latest/sqlx/macro.query.html#requirements
-      DATABASE_URL: "postgresql://chris:chris1234@db:5432/chris"
-    depends_on:
-      orthanc:
-        condition: service_started
-      rust-target-dir-permissions:
-        condition: service_completed_successfully
-      get-data:
-        condition: service_completed_successfully
-    profiles:
-      - oxidicom
-    networks:
-      minichris-local:
-      test-oxidicom:
-  rust-target-dir-permissions:
-    image: docker.io/library/rust:1.78-bookworm
-    volumes: *RUST_VOLUMES
-    command: chmod g+rwx /target /cargo
-    profiles:
-      - oxidicom
-    networks:
-      test-oxidicom:
-
-  openobserve:
-    image: public.ecr.aws/zinclabs/openobserve:v0.10.6-rc1
-    environment:
-      ZO_ROOT_USER_EMAIL: dev@babymri.org
-      ZO_ROOT_USER_PASSWORD: chris1234
-      ZO_DATA_DIR: /data
-    ports:
-      - "5080:5080"
-    volumes:
-      - openobserve:/data
-    restart: unless-stopped
-    profiles:
-      - observe
-    networks:
-      test-oxidicom:
-  otel-collector:
-    image: docker.io/otel/opentelemetry-collector:0.101.0
-    restart: unless-stopped
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
-    profiles:
-      - observe
-    networks:
-      test-oxidicom:
+      - tools
+    network_mode: "host"  # so that Orthanc in a container can send data out
 
 volumes:
   orthanc:
-  openobserve:
-  cargo-target:
-  cargo-home:
-  minichris-files:
-    external: true
-    name: minichris-files
-
-networks:
-  test-oxidicom:
-  minichris-local:
-    external: true
-    name: minichris-local

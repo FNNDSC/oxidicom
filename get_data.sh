@@ -6,7 +6,7 @@ GITHUB_TARBALLS=(
   https://api.github.com/repos/datalad/example-dicom-structural/tarball/f077bcc8d502ce8155507bd758cb3b7ccc887f40
 )
 
-until instances=$(curl -sf http://orthanc:8042/instances); do
+until instances=$(curl -sf http://localhost:8042/instances); do
   printf .
   sleep 1
 done
@@ -26,7 +26,7 @@ for url in "${GITHUB_TARBALLS[@]}"; do
 done
 
 find -type f -iname '*.dcm' \
-  | parallel --progress -j 4 "curl -sfX POST http://orthanc:8042/instances -H Expect: -H 'Content-Type: application/dicom' --data-binary @'{}' -o /dev/null"
+  | parallel --progress -j 4 "curl -sfX POST http://localhost:8042/instances -H Expect: -H 'Content-Type: application/dicom' --data-binary @'{}' -o /dev/null"
 
 cd /
 rm -rf $tmpdir

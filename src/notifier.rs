@@ -1,33 +1,25 @@
-use opentelemetry::trace::{FutureExt, Status, TraceContextExt, Tracer};
-use opentelemetry::Context;
-use std::sync::Arc;
-use tokio::sync::mpsc::error::SendError;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::task::JoinHandle;
-
+use crate::enums::SeriesEvent;
 use crate::error::HandleLoopError;
-use crate::pacs_file::PacsFileRegistrationRequest;
+use crate::types::{SeriesCount, SeriesKey};
+use std::sync::Arc;
+use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::task::JoinHandle;
 
 /// Forward objects from `receiver` to the given `client`.
 ///
 /// - Received `Some`: add item to the batch. When batch is full, give everything to the `client`
 /// - Received `None`: flush current batch to the `client`
 pub async fn cube_pacsfile_notifier(
-    mut receiver: UnboundedReceiver<Option<PacsFileRegistrationRequest>>,
+    mut receiver: UnboundedReceiver<(SeriesKey, SeriesEvent<Result<(), ()>, SeriesCount>)>,
     celery: Arc<celery::Celery>,
 ) -> Result<(), HandleLoopError> {
-    // We have two loops:
-    // 1. The receiver loop receives DICOM metadata from the receiver, and adds them to a batch.
-    //    When the batch is full, we create a task to send the DICOM metadata to the database.
-    // 2. The joiner_loop simply blocks until every task is complete.
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let receiver_loop = async {
-        while let Some(event) = receiver.recv().await {
-            handle_event(event, &celery, &tx).unwrap();
+        while let Some((series, event)) = receiver.recv().await {
+            tx.send(handle_event(series, event, &celery)).unwrap();
         }
         drop(tx);
     };
-
     // join tasks and take note of any errors.
     let mut everything_ok = true;
     let joiner_loop = async {
@@ -37,10 +29,7 @@ pub async fn cube_pacsfile_notifier(
             }
         }
     };
-
-    let (last_flush, _) = tokio::join!(receiver_loop, joiner_loop);
-    last_flush
-        .map_err(|_| HandleLoopError("Last flush of PACS files metadata to database failed."))?;
+    tokio::join!(receiver_loop, joiner_loop);
     if everything_ok {
         Ok(())
     } else {
@@ -50,78 +39,49 @@ pub async fn cube_pacsfile_notifier(
     }
 }
 
-/// A tokio task of [CubePostgresClient::register]
-type RegistrationTask = JoinHandle<Result<(), PacsFileDatabaseError>>;
+type RegistrationTask = JoinHandle<Result<(), ()>>;
 
-/// Receives `event` and calls [register_task] when needed, sending the task to `tx`.
-///
-/// Returns the batch's next state.
 fn handle_event(
-    event: Option<PacsFileRegistrationRequest>,
+    series: SeriesKey,
+    event: SeriesEvent<Result<(), ()>, SeriesCount>,
     client: &Arc<celery::Celery>,
-    tx: &UnboundedSender<RegistrationTask>,
-) -> Result<Batcher<PacsFileRegistrationRequest>, SendError<RegistrationTask>> {
-    let (next, full_batch) = match event {
-        None => take_batch(prev),
-        Some(pacs_file) => prev.push(pacs_file),
-    };
-    if let Some(files) = full_batch {
-        let task = register_task(client, files);
-        tx.send(task)?;
-    }
-    Ok(next)
-}
-
-/// Empties the batch and returns its contents.
-fn take_batch<T>(batches: Batcher<T>) -> (Batcher<T>, Option<Vec<T>>) {
-    let batch_size = batches.batch_size;
-    let batch = batches.into_inner();
-    let next_batches = Batcher::new(batch_size);
-    if batch.is_empty() {
-        tracing::debug!("batch is empty");
-        (next_batches, None)
-    } else {
-        (next_batches, Some(batch))
-    }
-}
-
-/// Wraps [CubePostgresClient::register] with [tokio::spawn] and [tracing].
-fn register_task(
-    client: &Arc<CubePostgresClient>,
-    files: Vec<PacsFileRegistrationRequest>,
 ) -> RegistrationTask {
-    let client = Arc::clone(client);
-    tokio::spawn(async move {
-        let tracer = opentelemetry::global::tracer(env!("CARGO_PKG_NAME"));
-        let span = tracer.start("register_to_postgres");
-        let cx = Context::current_with_span(span);
-
-        let n_files = files.len();
-        let result = client.register(files).with_context(cx.clone()).await;
-        match &result {
-            Ok(_) => {
-                tracing::info!(task = "register", count = n_files);
-                cx.span().set_status(Status::Ok);
-            }
-            Err(e) => {
-                tracing::error!(task = "register", error = e.to_string());
-                cx.span().set_status(Status::error(e.to_string()));
-            }
+    match event {
+        SeriesEvent::Instance(result) => tokio::spawn(async move {
+            // dbg!((series, result));
+            Ok(())
+        }),
+        SeriesEvent::Finish(count) => {
+            let client = Arc::clone(client);
+            tokio::spawn(
+                async move { send_registration_task_to_celery(series, count, &client).await },
+            )
         }
-        cx.span().end();
-        result
-    })
+    }
 }
 
-/// Consume the `batch` and give everything to [CubePostgresClient::register]
-async fn flush_to_database<C: AsRef<CubePostgresClient>>(
-    batch: Batcher<PacsFileRegistrationRequest>,
-    client: C,
-) -> Result<(), PacsFileDatabaseError> {
-    let remaining = batch.into_inner();
-    if remaining.is_empty() {
-        Ok(())
-    } else {
-        client.as_ref().register(&remaining).await
+async fn send_registration_task_to_celery(
+    series: SeriesKey,
+    count: SeriesCount,
+    client: &celery::Celery,
+) -> Result<(), ()> {
+    match client.send_task(count.into_task()).await {
+        Ok(r) => {
+            tracing::info!(
+                pacs_name = series.pacs_name.as_str(),
+                SeriesInstanceUID = series.SeriesInstanceUID,
+                celery_task_id = r.task_id,
+                celery_task_name = "register_pacs_series"
+            );
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!(
+                pacs_name = series.pacs_name.as_str(),
+                SeriesInstanceUID = series.SeriesInstanceUID,
+                message = e.to_string()
+            );
+            Err(())
+        }
     }
 }

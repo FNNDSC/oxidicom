@@ -1,18 +1,32 @@
 //! Initialize OpenTelemetry, then call [oxidicom::run_everything_from_env].
 
-use oxidicom::get_config;
+use figment::providers::Env;
+use figment::Figment;
+use opentelemetry::trace::TraceError;
+use opentelemetry_sdk::trace::TracerProvider;
+use std::sync::LazyLock;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     init_tracing_subscriber().unwrap();
     init_otel_tracing().unwrap();
-    let result = oxidicom::run_everything_from_env(None).await;
+    let result = run_everything_from_env(None).await;
     opentelemetry::global::shutdown_tracer_provider();
     result
 }
 
-fn init_otel_tracing() -> Result<opentelemetry_sdk::trace::Tracer, opentelemetry::trace::TraceError>
-{
+/// Calls [run_everything] using configuration from environment variables.
+///
+/// Function parameters are prioritized over environment variable values.
+///
+/// `finite_connections`: shut down the server after the given number of DICOM associations.
+pub async fn run_everything_from_env(finite_connections: Option<usize>) -> anyhow::Result<()> {
+    let settings = CONFIG.extract()?;
+    let on_start = |addr| tracing::info!("listening on: tcp://{}", addr);
+    oxidicom::run_everything(settings, finite_connections, Some(on_start)).await
+}
+
+fn init_otel_tracing() -> Result<TracerProvider, TraceError> {
     opentelemetry_otlp::new_pipeline()
         .tracing()
         .with_exporter(opentelemetry_otlp::new_exporter().tonic())
@@ -20,7 +34,7 @@ fn init_otel_tracing() -> Result<opentelemetry_sdk::trace::Tracer, opentelemetry
 }
 
 fn init_tracing_subscriber() -> Result<(), tracing::dispatcher::SetGlobalDefaultError> {
-    let level = if get_config().extract_inner_lossy("verbose").unwrap_or(false) {
+    let level = if CONFIG.extract_inner_lossy("verbose").unwrap_or(false) {
         tracing::Level::INFO
     } else {
         tracing::Level::WARN
@@ -31,3 +45,9 @@ fn init_tracing_subscriber() -> Result<(), tracing::dispatcher::SetGlobalDefault
             .finish(),
     )
 }
+
+static CONFIG: LazyLock<Figment> = LazyLock::new(|| {
+    Figment::new()
+        .merge(Env::prefixed("OXIDICOM_").split("_"))
+        .merge(Env::prefixed("OXIDICOM_"))
+});

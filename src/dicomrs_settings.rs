@@ -5,19 +5,15 @@ use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom::ul::association::server::AcceptAny;
 use dicom::ul::ServerAssociationOptions;
 
-/// Our AE title.
-#[braid(serde)]
-pub struct OurAETitle;
-
 /// The AE title of a peer PACS server pushing DICOMs to us.
 #[braid(serde)]
-pub struct ClientAETitle;
+pub struct AETitle;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct DicomRsSettings {
     /// Our AE title.
     #[serde(default = "default_aet")]
-    pub aet: OurAETitle,
+    pub aet: String,
     /// Whether receiving PDUs must not surpass the negotiated maximum PDU length.
     #[serde(default)]
     pub strict: bool,
@@ -29,13 +25,13 @@ pub struct DicomRsSettings {
     pub promiscuous: bool,
 }
 
-impl<'a> Into<ServerAssociationOptions<'a, AcceptAny>> for DicomRsSettings {
-    fn into(self) -> ServerAssociationOptions<'a, AcceptAny> {
+impl<'a> From<DicomRsSettings> for ServerAssociationOptions<'a, AcceptAny> {
+    fn from(value: DicomRsSettings) -> Self {
         let mut options = dicom::ul::association::ServerAssociationOptions::new()
             .accept_any()
-            .ae_title(self.aet.to_string())
-            .strict(self.strict);
-        if self.uncompressed_only {
+            .ae_title(value.aet.to_string())
+            .strict(value.strict);
+        if value.uncompressed_only {
             options = options
                 .with_transfer_syntax(uids::IMPLICIT_VR_LITTLE_ENDIAN)
                 .with_transfer_syntax(uids::EXPLICIT_VR_LITTLE_ENDIAN);
@@ -49,10 +45,10 @@ impl<'a> Into<ServerAssociationOptions<'a, AcceptAny>> for DicomRsSettings {
         for uid in ABSTRACT_SYNTAXES {
             options = options.with_abstract_syntax(*uid);
         }
-        options.promiscuous(self.promiscuous)
+        options.promiscuous(value.promiscuous)
     }
 }
 
-fn default_aet() -> OurAETitle {
-    OurAETitle::from_static("ChRIS")
+fn default_aet() -> String {
+    "ChRIS".to_string()
 }

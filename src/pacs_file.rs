@@ -1,64 +1,119 @@
-//! ChRIS backend PACSFile object representation.
-//!
-//! ## Notes
-//!
-//! `PatientAge` should be in days.
-//! https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/pypx/register.py#L459-L465
-#![allow(non_snake_case)]
-
 use std::fmt::Display;
 
-use crate::dicomrs_settings::ClientAETitle;
+use crate::dicomrs_settings::AETitle;
 use dicom::dictionary_std::tags;
 use dicom::object::{DefaultDicomObject, Tag};
 
 use crate::error::{name_of, DicomRequiredTagError, RequiredTagError};
 use crate::patient_age::parse_age;
 use crate::sanitize::sanitize_path;
+use crate::types::{DicomFilePath, DicomInfo};
 
 /// A wrapper of [PacsFileRegistrationRequest] along with the [DefaultDicomObject] it was created from.
 pub struct PacsFileRegistration {
-    pub request: PacsFileRegistrationRequest,
+    pub data: DicomInfo<DicomFilePath>,
     pub obj: DefaultDicomObject,
 }
 
 impl PacsFileRegistration {
-    /// Wraps [PacsFileRegistrationRequest::new].
     pub(crate) fn new(
-        pacs_name: ClientAETitle,
+        pacs_name: AETitle,
         obj: DefaultDicomObject,
     ) -> Result<(Self, Vec<BadTag>), DicomRequiredTagError> {
-        match PacsFileRegistrationRequest::new(pacs_name, &obj) {
-            Ok((request, bad_tags)) => Ok((Self { request, obj }, bad_tags)),
+        match get_series_tags(pacs_name, &obj) {
+            Ok((data, bad_tags)) => Ok((Self { data, obj }, bad_tags)),
             Err(error) => Err(DicomRequiredTagError { obj, error }),
         }
     }
 }
 
-/// Data necessary to register a DICOM file to CUBE's database in the `pacsfiles_pacsfile` table.
-///
-/// Historically, this struct represented the JSON payload to `POST api/v1/pacs/`. However,
-/// we register files directly to the database instead of via CUBE for performance reasons.
-#[derive(Debug, Clone)]
-pub struct PacsFileRegistrationRequest {
-    pub path: String,
-    pub PatientID: String,
-    pub StudyDate: time::Date,
-    pub StudyInstanceUID: String,
-    pub SeriesInstanceUID: String,
-    pub pacs_name: ClientAETitle,
+#[allow(non_snake_case)]
+fn get_series_tags(
+    pacs_name: AETitle,
+    dcm: &DefaultDicomObject,
+) -> Result<(DicomInfo<DicomFilePath>, Vec<BadTag>), RequiredTagError> {
+    let mut bad_tags = vec![];
+    // required fields
+    let StudyInstanceUID = ttr(dcm, tags::STUDY_INSTANCE_UID)?;
+    let SeriesInstanceUID = ttr(dcm, tags::SERIES_INSTANCE_UID)?;
+    let SOPInstanceUID = ttr(dcm, tags::SOP_INSTANCE_UID)?;
+    let PatientID = ttr(dcm, tags::PATIENT_ID)?;
+    let StudyDate_string = ttr(dcm, tags::STUDY_DATE)?; // required by CUBE
+    let StudyDate_format = time::macros::format_description!("[year][month][day]"); // DICOM DA format
+    let StudyDate = time::Date::parse(&StudyDate_string, &StudyDate_format).map_err(|_| {
+        RequiredTagError::Bad(BadTag {
+            tag: tags::STUDY_DATE,
+            value: Some(StudyDate_string.to_string()),
+        })
+    })?;
 
-    pub PatientName: Option<String>,
-    pub PatientBirthDate: Option<String>,
-    pub PatientAge: Option<i32>, // i32 because PostgreSQL
-    pub PatientSex: Option<String>,
-    pub AccessionNumber: Option<String>,
-    pub Modality: Option<String>,
-    pub ProtocolName: Option<String>,
-    pub StudyDescription: Option<String>,
-    pub SeriesDescription: Option<String>,
+    // optional values
+    let PatientName = tts(dcm, tags::PATIENT_NAME);
+    let PatientBirthDate = tts(dcm, tags::PATIENT_BIRTH_DATE);
+    let StudyDescription = tts(dcm, tags::STUDY_DESCRIPTION);
+    let AccessionNumber = tts(dcm, tags::ACCESSION_NUMBER);
+    let SeriesDescription = tts(dcm, tags::SERIES_DESCRIPTION);
+
+    // SeriesNumber and InstanceNumber are not fields of a ChRIS PACSFile.
+    // They should be integers, and they also should appear in the fname.
+    let InstanceNumber = tt(dcm, tags::INSTANCE_NUMBER).map(MaybeU32::from);
+    let SeriesNumber = tt(dcm, tags::SERIES_NUMBER).map(MaybeU32::from);
+
+    // Numerical value
+    let PatientAgeStr = tt(dcm, tags::PATIENT_AGE);
+    let PatientAge = PatientAgeStr.and_then(|age| {
+        let num = parse_age(age.trim());
+        if num.is_none() {
+            bad_tags.push(BadTag {
+                tag: tags::PATIENT_AGE,
+                value: Some(age.to_string()),
+            })
+        };
+        num
+    });
+
+    // https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/bin/px-push#L175-L195
+    let path = format!(
+        "SERVICES/PACS/{}/{}-{}-{}/{}-{}-{}/{:0>5}-{}-{}/{:0>4}-{}.dcm",
+        sanitize_path(&pacs_name),
+        // Patient
+        sanitize_path(PatientID.as_str()),
+        sanitize_path(PatientName.as_deref().unwrap_or("")),
+        sanitize_path(PatientBirthDate.as_deref().unwrap_or("")),
+        // Study
+        sanitize_path(StudyDescription.as_deref().unwrap_or("StudyDescription")),
+        sanitize_path(AccessionNumber.as_deref().unwrap_or("AccessionNumber")),
+        sanitize_path(StudyDate_string.as_str()),
+        // Series
+        SeriesNumber.unwrap_or_else(|| MaybeU32::String("SeriesNumber".to_string())),
+        sanitize_path(SeriesDescription.as_deref().unwrap_or("SeriesDescription")),
+        &hash(SeriesInstanceUID.as_str())[..7],
+        // Instance
+        InstanceNumber.unwrap_or_else(|| MaybeU32::String("InstanceNumber".to_string())),
+        sanitize_path(SOPInstanceUID)
+    );
+    let path = DicomFilePath::new(path);
+    let pacs_file = DicomInfo {
+        path,
+        pacs_name,
+        PatientID,
+        StudyDate,
+        StudyInstanceUID,
+        SeriesInstanceUID,
+        PatientName,
+        PatientBirthDate,
+        PatientAge,
+        PatientSex: tts(dcm, tags::PATIENT_SEX),
+        AccessionNumber,
+        Modality: tts(dcm, tags::MODALITY),
+        ProtocolName: tts(dcm, tags::PROTOCOL_NAME),
+        StudyDescription,
+        SeriesDescription,
+    };
+    Ok((pacs_file, bad_tags))
 }
 
+/// An invalid DICOM tag key-value pair.
 #[derive(Debug)]
 pub struct BadTag {
     pub tag: Tag,
@@ -71,96 +126,9 @@ impl Display for BadTag {
     }
 }
 
-impl PacsFileRegistrationRequest {
-    pub fn new(
-        pacs_name: ClientAETitle,
-        dcm: &DefaultDicomObject,
-    ) -> Result<(Self, Vec<BadTag>), RequiredTagError> {
-        let mut bad_tags = vec![];
-        // required fields
-        let StudyInstanceUID = ttr(dcm, tags::STUDY_INSTANCE_UID)?;
-        let SeriesInstanceUID = ttr(dcm, tags::SERIES_INSTANCE_UID)?;
-        let SOPInstanceUID = ttr(dcm, tags::SOP_INSTANCE_UID)?;
-        let PatientID = ttr(dcm, tags::PATIENT_ID)?;
-        let StudyDate_string = ttr(dcm, tags::STUDY_DATE)?; // required by CUBE
-        let StudyDate_format = time::macros::format_description!("[year][month][day]"); // DICOM DA format
-        let StudyDate = time::Date::parse(&StudyDate_string, &StudyDate_format).map_err(|_| {
-            RequiredTagError::Bad(BadTag {
-                tag: tags::STUDY_DATE,
-                value: Some(StudyDate_string.to_string()),
-            })
-        })?;
-
-        // optional values
-        let PatientName = tts(dcm, tags::PATIENT_NAME);
-        let PatientBirthDate = tts(dcm, tags::PATIENT_BIRTH_DATE);
-        let StudyDescription = tts(dcm, tags::STUDY_DESCRIPTION);
-        let AccessionNumber = tts(dcm, tags::ACCESSION_NUMBER);
-        let SeriesDescription = tts(dcm, tags::SERIES_DESCRIPTION);
-
-        // SeriesNumber and InstanceNumber are not fields of a ChRIS PACSFile.
-        // They should be integers, and they also should appear in the fname.
-        let InstanceNumber = tt(dcm, tags::INSTANCE_NUMBER).map(MaybeU32::from);
-        let SeriesNumber = tt(dcm, tags::SERIES_NUMBER).map(MaybeU32::from);
-
-        // Numerical value
-        let PatientAgeStr = tt(dcm, tags::PATIENT_AGE);
-        let PatientAge = PatientAgeStr.and_then(|age| {
-            let num = parse_age(age.trim());
-            if num.is_none() {
-                bad_tags.push(BadTag {
-                    tag: tags::PATIENT_AGE,
-                    value: Some(age.to_string()),
-                })
-            };
-            num
-        });
-
-        // https://github.com/FNNDSC/pypx/blob/7b83154d7c6d631d81eac8c9c4a2fc164ccc2ebc/bin/px-push#L175-L195
-        let path = format!(
-            "SERVICES/PACS/{}/{}-{}-{}/{}-{}-{}/{:0>5}-{}-{}/{:0>4}-{}.dcm",
-            sanitize_path(&pacs_name),
-            // Patient
-            sanitize_path(PatientID.as_str()),
-            sanitize_path(PatientName.as_deref().unwrap_or("")),
-            sanitize_path(PatientBirthDate.as_deref().unwrap_or("")),
-            // Study
-            sanitize_path(StudyDescription.as_deref().unwrap_or("StudyDescription")),
-            sanitize_path(AccessionNumber.as_deref().unwrap_or("AccessionNumber")),
-            sanitize_path(StudyDate_string.as_str()),
-            // Series
-            SeriesNumber.unwrap_or_else(|| MaybeU32::String("SeriesNumber".to_string())),
-            sanitize_path(SeriesDescription.as_deref().unwrap_or("SeriesDescription")),
-            &hash(SeriesInstanceUID.as_str())[..7],
-            // Instance
-            InstanceNumber.unwrap_or_else(|| MaybeU32::String("InstanceNumber".to_string())),
-            sanitize_path(SOPInstanceUID)
-        );
-
-        let pacs_file = Self {
-            path,
-            pacs_name,
-            PatientID,
-            StudyDate,
-            StudyInstanceUID,
-            SeriesInstanceUID,
-            PatientName,
-            PatientBirthDate,
-            PatientAge,
-            PatientSex: tts(dcm, tags::PATIENT_SEX),
-            AccessionNumber,
-            Modality: tts(dcm, tags::MODALITY),
-            ProtocolName: tts(dcm, tags::PROTOCOL_NAME),
-            StudyDescription,
-            SeriesDescription,
-        };
-        Ok((pacs_file, bad_tags))
-    }
-}
-
 /// Required string tag
 fn ttr(dcm: &DefaultDicomObject, tag: Tag) -> Result<String, RequiredTagError> {
-    tts(dcm, tag).ok_or_else(|| RequiredTagError::Missing(tag))
+    tts(dcm, tag).ok_or(RequiredTagError::Missing(tag))
 }
 
 /// Optional string tag (with null bytes removed)

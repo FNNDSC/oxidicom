@@ -11,30 +11,28 @@ Documentation: https://chrisproject.org/docs/oxidicom
 
 ## Development
 
-The development scripts are hard-coded to work with an instance of _miniChRIS_.
-Follow these instructions to spin up the backend: 
-https://github.com/FNNDSC/miniChRIS-docker#readme
+You'll need: [Docker Compose](https://docs.docker.com/compose/) and [Rust](https://rustup.rs/).
 
-To speak to _CUBE_, `oxidicom` needs to run in a Docker container in the same network and mounting
-the same volume as _CUBE_'s container. This is coded up in `./docker-compose.yml`.
-
-You need to have installed:
-
-- Docker Compose
-- https://github.com/casey/just
-
-Simply run
+Start [RabbitMQ](https://hub.docker.com/_/rabbitmq) and [Orthanc](https://www.orthanc-server.com/)
+services for testing, then download test data:
 
 ```shell
-just test
+docker compose run --rm get-data
 ```
 
-The `just` command, without arguments, will:
+Run all tests:
 
-1. Run Orthanc
-2. Download sample data
-3. Push sample data into Orthanc
-4. Run unit and integration tests
+```shell
+cargo test
+```
+
+Clean up:
+
+```shell
+docker compose down -v
+```
+
+## Notes
 
 ### Usage of `opentelemetry` v.s. `tracing` in the codebase
 

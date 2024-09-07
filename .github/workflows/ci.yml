@@ -1,5 +1,3 @@
-# On push: build latest images
-
 name: CI
 
 on:
@@ -11,104 +9,22 @@ on:
       - '.github/**'
       - '**.rs'
       - 'Cargo.*'
-      - 'justfile'
       - 'Dockerfile'
       - 'docker-compose.yml'
-      - 'run.sh'
   pull_request:
     branches: [ master ]
 
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v4
-    - uses: FNNDSC/miniChRIS-docker@master
-    - uses: taiki-e/install-action@v2
-      with:
-        tool: just
-    - name: Start Orthanc
-      run: docker compose up -d orthanc
+    - name: Start services
+      run: docker compose up -d
     - name: Download example data
-      run: docker compose up get-data
+      run: docker compose run --rm get-data
     - name: Compile test binary
-      run: just test --no-run
-    - name: Integration test
-      run: just test
-  build:
-    name: Build
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Decide image tags
-        id: info
-        shell: python
-        run: |
-          import os
-          import itertools
-          
-          def join_tag(t):
-            registry, repo, tag = t
-            return f'{registry}/{repo}:{tag}'.lower()
-          
-          registries = ['docker.io', 'ghcr.io']
-          repos = ['${{ github.repository }}'.lower()]
-          if '${{ github.ref_type }}' == 'branch':
-              tags = ['latest']
-          elif '${{ github.ref_type }}' == 'tag':
-              tag = '${{ github.ref_name }}'
-              version = tag[1:] if tag.startswith('v') else tag
-              tags = ['latest', version]
-          else:
-              tags = []
-
-          product = itertools.product(registries, repos, tags)
-          tags_csv = ','.join(map(join_tag, product))
-          outputs = {
-              'tags_csv' : tags_csv,
-          }
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
-              for k, v in outputs.items():
-                  out.write(f'{k}={v}\n')
-      - uses: FNNDSC/miniChRIS-docker@master  # need to run CUBE for sqlx to do compile-time validation of SQL queries
-      - uses: docker/setup-buildx-action@v3
-        with:
-          # builder needs to be able to see the Postgres database running in the minichris-local network,
-          # so that the sqlx crate can do compile-time verification of SQL commands.
-          driver-opts: network=minichris-local
-      - name: Login to DockerHub
-        if: github.event_name == 'push' || github.event_name == 'release'
-        id: dockerhub_login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-      - name: Login to GitHub Container Registry
-        if: github.event_name == 'push' || github.event_name == 'release'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Get database IP
-        id: read-network
-        # sqlx crate needs the environment variable DATABASE_URL to be set for compile-time validation of SQL commands.
-        # For unknown reasons, docker container service name DNS doesn't work inside the build, so we need to get the
-        # database container's IP address.
-        run: |
-          db_container_name=$(docker ps -f 'label=com.docker.compose.service=db' --format '{{ .Names }}')
-          ip_address_with_subnet=$(docker network inspect minichris-local --format "{{ range .Containers }}{{ if (eq .Name \"$db_container_name\") }}{{ .IPv4Address }}{{ end }}{{ end }}")
-          ip_address="${ip_address_with_subnet%/*}"
-          database_url="postgresql://chris:chris1234@$ip_address:5432/chris"
-          echo "db_container_name=$db_container_name ip_address=$ip_address database_url=$database_url"
-          docker run --rm --network minichris-local docker.io/library/postgres:16 psql "$database_url" -c 'SELECT 1 + 1'
-          echo "DATABASE_URL=$database_url" >> "$GITHUB_OUTPUT"
-      - name: Build image
-        uses: docker/build-push-action@v5
-        id: docker_build
-        with:
-          tags: ${{ steps.info.outputs.tags_csv }}
-          push: ${{ steps.dockerhub_login.outcome == 'success' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: DATABASE_URL=${{ steps.read-network.outputs.DATABASE_URL }}
+      run: cargo test --no-run
+    - name: Run tests
+      run: cargo test

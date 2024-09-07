@@ -1,95 +1,98 @@
-use chris::types::{CubeUrl, Username};
-use chris::ChrisClient;
-use figment::providers::Env;
-use figment::Figment;
+mod expected;
+mod model;
 
-use crate::{CALLED_AE_TITLE, EXAMPLE_SERIES_INSTANCE_UIDS};
+pub use expected::EXPECTED_SERIES;
+use std::collections::HashSet;
 
-pub async fn run_assertions(expected_counts: &[usize]) {
-    let client = get_client_from_env().await;
-    for (series, expected_count) in EXAMPLE_SERIES_INSTANCE_UIDS
-        .iter()
-        .zip(expected_counts.into_iter())
-    {
-        let actual_count = client
-            .pacsfiles()
-            .series_instance_uid(*series)
-            .pacs_identifier(CALLED_AE_TITLE)
-            .search()
-            .get_count()
-            .await
-            .unwrap();
-        assert_eq!(actual_count, *expected_count);
+use crate::assertions::model::SeriesParams;
+use camino::Utf8Path;
+use celery::broker::{AMQPBrokerBuilder, BrokerBuilder};
+use celery::prelude::BrokerError;
+use celery::protocol::MessageBody;
+use futures::{stream, StreamExt, TryStreamExt};
+use oxidicom::register_pacs_series;
 
-        // the "Oxidicom Custom Metadata" spec should store the NumberOfSeriesRelatedInstances
-        // in a blank file with the filename NumberOfSeriesRelatedInstances=value,
-        // and searchable by ProtocolName.
-        let custom_file_num_related = client.pacsfiles()
-            .pacs_identifier(oxidicom::OXIDICOM_CUSTOM_PACS_NAME)
-            .series_instance_uid(*series)
-            .protocol_name("NumberOfSeriesRelatedInstances")
-            .search()
-            .get_first()
-            .await
-            .unwrap()
-            .expect("\"Oxidicom Custom Metadata\" file for NumberOfSeriesRelatedInstances not found. Usually, it should be registered before all DICOM instances are done being registered.")
-            .object;
-
-        // The value should be stored as the SeriesDescription
-        let actual_value = custom_file_num_related.series_description;
-        let expected_value = Some(expected_count.to_string());
-        assert_eq!(actual_value, expected_value);
-
-        let actual_basename = custom_file_num_related
-            .fname
-            .as_str()
-            .rsplit_once('/')
-            .map(|(_l, r)| r)
-            .unwrap_or(custom_file_num_related.fname.as_str());
-        let expected_basename = format!("NumberOfSeriesRelatedInstances={expected_count}");
-        assert_eq!(actual_basename, &expected_basename);
-
-        // the "Oxidicom Custom Metadata" spec should store the OxidicomAttemptedPushCount
-        // in a blank file with the filename OxidicomAttemptedPushCount=value,
-        // and searchable by ProtocolName.
-        let custom_file_num_attempts = client.pacsfiles()
-            .pacs_identifier(oxidicom::OXIDICOM_CUSTOM_PACS_NAME)
-            .series_instance_uid(*series)
-            .protocol_name("OxidicomAttemptedPushCount")
-            .search()
-            .get_first()
-            .await
-            .unwrap()
-            .expect("\"Oxidicom Custom Metadata\" file for OxidicomAttemptedPushCount not found. It should be registered after the last DICOM file was pushed.")
-            .object;
-        assert_eq!(
-            custom_file_num_attempts.series_description,
-            Some(expected_count.to_string())
-        )
-    }
+pub async fn assert_files_stored(storage_path: &Utf8Path) {
+    stream::iter(&*EXPECTED_SERIES)
+        .for_each_concurrent(EXPECTED_SERIES.len(), |series| {
+            assert_series_path(storage_path, series)
+        })
+        .await;
 }
 
-async fn get_client_from_env() -> ChrisClient {
-    let TestSettings {
-        url,
-        username,
-        password,
-    } = Figment::from(Env::prefixed("OXIDICOM_TEST_"))
-        .extract()
+async fn assert_series_path(storage_path: &Utf8Path, series: &SeriesParams) {
+    let series_dir = storage_path.join(&series.path);
+    let count = tokio::fs::read_dir(series_dir)
+        .await
+        .map(tokio_stream::wrappers::ReadDirStream::new)
+        .unwrap()
+        .map(|result| async {
+            let entry = result.unwrap();
+            assert!(
+                entry.file_type().await.unwrap().is_file(),
+                "{:?} is not a file. PACSSeries folder may only contain files.",
+                entry.path()
+            );
+            assert_eq!(
+                entry
+                    .path()
+                    .extension()
+                    .expect("Found file without file extension")
+                    .to_str()
+                    .expect("Found file with invalid UTF-8 file extension"),
+                ".dcm",
+                "{:?} does not have a .dcm file extension.",
+                entry.path()
+            );
+            entry
+        })
+        .count()
+        .await;
+    assert_eq!(count, series.ndicom);
+}
+
+pub async fn assert_rabbitmq_messages(address: &str, queue_name: &str) {
+    let broker = Box::new(AMQPBrokerBuilder::new(address))
+        .declare_queue(queue_name)
+        .build(1000)
+        .await
+        .unwrap();
+    let error_handler = Box::new(move |e: BrokerError| panic!("{:?}", e));
+    let (_consumer_tag, consumer) = broker.consume(queue_name, error_handler).await.unwrap();
+
+    // Deserialize deliveries into messages
+    let messages_stream = consumer.try_filter_map(|delivery| async move {
+        delivery.ack().await.unwrap();
+        let body = delivery
+            .try_deserialize_message()
+            .and_then(|m| m.body::<register_pacs_series>())
+            .unwrap();
+        Ok(Some(body))
+    });
+
+    // Read the expected number of messages from the stream
+    let params: HashSet<SeriesParams> = stream::iter(0..EXPECTED_SERIES.len())
+        .zip(messages_stream)
+        .map(|(_, r)| r)
+        .try_filter_map(|r| async { Ok(Some(deserialize_params(r))) })
+        .try_collect()
+        .await
+        .map_err(|e| format!("{}", e))
         .unwrap();
 
-    let account = chris::Account::new(&url, &username, &password);
-    let token = account.get_token().await.unwrap();
-    ChrisClient::build(url, username, token)
-        .unwrap()
-        .connect()
-        .await
-        .unwrap()
+    assert_eq!(&*EXPECTED_SERIES, &params);
 }
 
-#[derive(serde::Deserialize)]
-struct TestSettings {
-    url: CubeUrl,
-    username: Username,
-    password: String,
+fn deserialize_params<T: celery::task::Task, D: serde::de::DeserializeOwned>(
+    body: MessageBody<T>,
+) -> D {
+    if let serde_json::Value::Array(v) = serde_json::to_value(body).unwrap() {
+        return v
+            .into_iter()
+            .map(serde_json::from_value)
+            .filter_map(|r| r.ok())
+            .next()
+            .expect("No elements were deserializable to the specified type.");
+    }
+    panic!("Expected body to be an array, but it is not.")
 }
