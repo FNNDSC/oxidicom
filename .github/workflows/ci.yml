@@ -24,6 +24,8 @@ jobs:
       run: docker compose up -d
     - name: Download example data
       run: docker compose run --rm get-data
+    - name: Cache rust build
+      uses: Swatinem/rust-cache@v2
     - name: Compile test binary
       run: cargo test --no-run
     - name: Run tests
