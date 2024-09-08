@@ -67,8 +67,12 @@ async fn test_run_everything_from_env() {
     // wait for server to shut down
     server_handle.await.unwrap().unwrap();
 
-    // shutdown the NATS subscriber
-    tokio::time::sleep(core::time::Duration::from_secs(1)).await;
+    // Shutdown the NATS subscriber after waiting a little bit.
+    // Note: instead of shutting itself down after receiving the correct number
+    // of "DONE" messages, we prefer the naive approach of waiting 500ms instead,
+    // so that here in the test we can assert that the "DONE" messages do indeed
+    // come last and no out-of-order/race condition errors are happening.
+    tokio::time::sleep(Duration::from_millis(500)).await;
     nats_shutdown_tx.send(true).await.unwrap();
     let lonk_messages = nats_subscriber_loop.await.unwrap();
 
