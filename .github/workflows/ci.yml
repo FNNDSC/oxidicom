@@ -61,12 +61,12 @@ jobs:
     - uses: actions/checkout@v4
     - name: Cache rust build
       uses: Swatinem/rust-cache@v2
-    - name: Install cross-compilation tools
-      uses: taiki-e/setup-cross-toolchain-action@v1
+    - name: Build
+      uses: houseabsolute/actions-rust-cross@ad283b2fc65ad1f3a04fb8bf8b2b829aad4a9318
       with:
         target: ${{ matrix.target }}
-    - name: Build
-      run: cargo build --release --locked
+        command: build
+        args: --release --locked
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
