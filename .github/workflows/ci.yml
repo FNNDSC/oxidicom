@@ -81,11 +81,12 @@ jobs:
       uses: actions/download-artifact@v4
     - name: Print out all files
       run: find -type f
-    - name: Move binaries
+    - name: Move binaries and mark executable
       run: |
         mkdir -vp dist/linux/amd64 dist/linux/arm64
         mv -v build__x86_64-unknown-linux-musl/oxidicom dist/linux/amd64/oxidicom
         mv -v build__aarch64-unknown-linux-musl/oxidicom dist/linux/arm64/oxidicom
+        chmod -v 555 dist/linux/{amd64,arm64}/oxidicom
     - name: Create Dockerfile
       run: |
         cat > Dockerfile << EOF
