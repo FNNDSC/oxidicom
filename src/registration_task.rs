@@ -26,7 +26,7 @@ pub fn register_pacs_series(
     SeriesInstanceUID: String,
     pacs_name: AETitle,
     path: SeriesPath,
-    ndicom: usize,
+    ndicom: u32,
     PatientName: Option<String>,
     PatientBirthDate: Option<String>,
     PatientAge: Option<i32>,

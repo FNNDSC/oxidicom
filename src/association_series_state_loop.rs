@@ -2,7 +2,7 @@ use crate::dicomrs_settings::AETitle;
 use crate::enums::{AssociationEvent, SeriesEvent};
 use crate::error::{DicomRequiredTagError, DicomStorageError, HandleLoopError};
 use crate::pacs_file::{BadTag, PacsFileRegistration};
-use crate::types::{DicomFilePath, DicomInfo, PendingDicomInstance, SeriesCount, SeriesKey};
+use crate::types::{DicomFilePath, DicomInfo, PendingDicomInstance, SeriesKey, SeriesPath};
 use camino::{Utf8Path, Utf8PathBuf};
 use dicom::object::DefaultDicomObject;
 use std::collections::HashMap;
@@ -11,6 +11,22 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 use ulid::Ulid;
+
+struct Association {
+    pacs_name: AETitle,
+    series: HashMap<SeriesKey, DicomInfo<SeriesPath>>,
+}
+
+impl Association {
+    fn new(pacs_name: AETitle) -> Self {
+        Self {
+            pacs_name,
+            series: Default::default(),
+        }
+    }
+}
+
+type InflightAssociations = HashMap<Ulid, Association>;
 
 /// Stateful handling of [AssociationEvent].
 ///
@@ -23,7 +39,7 @@ pub(crate) async fn association_series_state_loop(
     sender: UnboundedSender<(SeriesKey, PendingDicomInstance)>,
     files_root: Utf8PathBuf,
 ) -> Result<Result<(), HandleLoopError>, SendError<(SeriesKey, PendingDicomInstance)>> {
-    let mut inflight_associations: HashMap<Ulid, Association> = Default::default();
+    let mut inflight_associations: InflightAssociations = Default::default();
     let mut everything_ok = true;
     let files_root = Arc::new(files_root);
     while let Some(event) = receiver.recv().await {
@@ -55,7 +71,7 @@ pub(crate) async fn association_series_state_loop(
 /// code to cause a race condition).
 fn match_event(
     event: AssociationEvent,
-    inflight_associations: &mut HashMap<Ulid, Association>,
+    inflight_associations: &mut InflightAssociations,
     files_root: &Arc<Utf8PathBuf>,
 ) -> Result<Vec<(SeriesKey, PendingDicomInstance)>, ()> {
     match event {
@@ -83,32 +99,30 @@ fn match_event(
 
 /// Receive a DICOM instance. It will be taken note of in `inflight_associations`.
 ///
-/// For every DICOM instance received: create a task to store the DICOM instance as a file
+/// For every DICOM instance received: create a task to store the DICOM instance as a file.
+/// When the task finishes, it returns the count of files stored.
 ///
 /// The tasks are returned.
 fn receive_dicom_instance(
     ulid: Ulid,
     dcm: DefaultDicomObject,
-    inflight_associations: &mut HashMap<Ulid, Association>,
+    inflight_associations: &mut InflightAssociations,
     files_root: &Arc<Utf8PathBuf>,
-) -> Result<(SeriesKey, JoinHandle<Result<(), ()>>), DicomRequiredTagError> {
+) -> Result<(SeriesKey, JoinHandle<Result<(), DicomStorageError>>), DicomRequiredTagError> {
     let association = inflight_associations
         .get_mut(&ulid)
         .expect("Unknown association ULID");
-    let pacs_name = association.aec.clone();
+    let pacs_name = association.pacs_name.clone();
     let (pacs_file, bad_tags) = PacsFileRegistration::new(pacs_name, dcm)?;
     report_bad_tags(&pacs_file.data, ulid, bad_tags);
     let series_key = SeriesKey::new(
         pacs_file.data.SeriesInstanceUID.clone(),
         pacs_file.data.pacs_name.clone(),
     );
-    if let Some(state) = association.series.get_mut(&series_key) {
-        state.count += 1;
-    } else {
-        association
-            .series
-            .insert(series_key.clone(), SeriesCount::new(pacs_file.data.clone()));
-    }
+    association
+        .series
+        .entry(series_key.clone())
+        .or_insert_with(|| pacs_file.data.clone().into());
     let storage_task = {
         let files_root = Arc::clone(files_root);
         tokio::task::spawn_blocking(move || write_dicom_wotel(&files_root, &pacs_file))
@@ -118,7 +132,7 @@ fn receive_dicom_instance(
 
 /// Creates messages for the end of an association.
 fn finish_association(
-    series_counts: HashMap<SeriesKey, SeriesCount>,
+    series_counts: HashMap<SeriesKey, DicomInfo<SeriesPath>>,
 ) -> Vec<(SeriesKey, PendingDicomInstance)> {
     series_counts
         .into_iter()
@@ -126,31 +140,16 @@ fn finish_association(
         .collect()
 }
 
-/// Information about a DICOM "association" which is a TCP connection from a PACS server
-/// who is pushing DICOM files to us.
-struct Association {
-    /// AE title of the PACS pushing to us
-    aec: AETitle,
-    /// The unique series we are receiving during this association.
-    series: HashMap<SeriesKey, SeriesCount>,
-}
-
-impl Association {
-    fn new(aec: AETitle) -> Self {
-        Self {
-            aec,
-            series: Default::default(),
-        }
-    }
-}
-
 /// Wraps [write_dicom] with OpenTelemetry logging.
-fn write_dicom_wotel(files_root: &Utf8Path, pacs_file: &PacsFileRegistration) -> Result<(), ()> {
+fn write_dicom_wotel(
+    files_root: &Utf8Path,
+    pacs_file: &PacsFileRegistration,
+) -> Result<(), DicomStorageError> {
     match write_dicom(pacs_file, files_root) {
         Ok(path) => tracing::info!(event = "storage", path = path.into_string()),
         Err(e) => {
             tracing::error!(event = "storage", error = e.to_string());
-            return Err(());
+            return Err(e);
         }
     }
     Ok(())

@@ -4,6 +4,7 @@ use camino::Utf8Path;
 use futures::StreamExt;
 use oxidicom::{run_everything, DicomRsSettings, OxidicomEnvOptions};
 use std::num::NonZeroUsize;
+use std::time::Duration;
 
 mod assertions;
 mod orthanc_client;
@@ -21,31 +22,56 @@ async fn test_run_everything_from_env() {
     )
     .unwrap();
 
-    let queue_name = names::Generator::default().next().unwrap();
     let temp_dir = tempfile::tempdir().unwrap();
     let temp_dir_path = Utf8Path::from_path(temp_dir.path()).unwrap();
 
-    let num_to_handle = Some(EXPECTED_SERIES.len());
+    let queue_name = names::Generator::default().next().unwrap();
     let options = create_test_options(temp_dir_path, queue_name.to_string());
     let amqp_address = options.amqp_address.clone();
-    let (start_tx, mut start_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (nats_shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel(1);
+    let nats = async_nats::connect(options.nats_address.as_ref().unwrap())
+        .await
+        .unwrap();
+    let mut subscriber = nats.subscribe("oxidicom").await.unwrap();
+    let nats_subscriber_loop = tokio::spawn(async move {
+        let mut messages = Vec::new();
+        loop {
+            tokio::select! {
+                Some(v) = subscriber.next() => messages.push(v),
+                Some(_) = shutdown_rx.recv() => break,
+            }
+        }
+        messages
+    });
+
+    let (start_tx, start_rx) = tokio::sync::oneshot::channel();
     let on_start = move |x| start_tx.send(x).unwrap();
+
+    let num_to_handle = Some(EXPECTED_SERIES.len());
     let server = run_everything(options, num_to_handle, Some(on_start));
     let server_handle = tokio::spawn(server);
 
     // wait for message from `on_start` indicating server is ready for connections
-    start_rx.recv().await.unwrap();
+    start_rx.await.unwrap();
 
+    // tell Orthanc to send the test data to us
     futures::stream::iter(EXPECTED_SERIES.iter().map(|s| s.SeriesInstanceUID.as_str()))
-        .for_each_concurrent(4, |series_instance_uid| async move {
+        .for_each_concurrent(2, |series_instance_uid| async move {
             let res = orthanc_store(ORTHANC_URL, CALLING_AE_TITLE, series_instance_uid)
                 .await
                 .unwrap();
             assert_eq!(res.failed_instances_count, 0);
         })
         .await;
+
+    // wait for server to shut down
     server_handle.await.unwrap().unwrap();
 
+    // shutdown the NATS subscriber
+    nats_shutdown_tx.send(true).await.unwrap();
+    nats_subscriber_loop.await.unwrap();
+
+    // run all assertions
     tokio::join!(
         assert_files_stored(&temp_dir_path),
         assert_rabbitmq_messages(&amqp_address, &queue_name)
@@ -60,8 +86,8 @@ fn create_test_options<P: AsRef<Utf8Path>>(
         amqp_address: "amqp://localhost:5672".to_string(),
         files_root: files_root.as_ref().to_path_buf(),
         queue_name,
-        progress_nats_address: None,
-        progress_interval: Default::default(),
+        nats_address: Some("localhost:4222".to_string()),
+        progress_interval: Duration::from_millis(1),
         scp: DicomRsSettings {
             aet: "OXIDICOMTEST".to_string(),
             strict: false,

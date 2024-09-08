@@ -3,6 +3,10 @@ services:
     image: docker.io/library/rabbitmq:3
     ports:
       - "5672:5672"
+  nats:
+    image: docker.io/library/nats:2.10.20
+    ports:
+      - "4222:4222"
   orthanc:
     image: docker.io/jodogne/orthanc-plugins:1.12.3
     volumes:

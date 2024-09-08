@@ -2,6 +2,7 @@
 
 use crate::dicomrs_settings::AETitle;
 use crate::enums::SeriesEvent;
+use crate::error::DicomStorageError;
 use crate::registration_task::register_pacs_series;
 use aliri_braid::braid;
 use celery::task::Signature;
@@ -71,7 +72,7 @@ pub(crate) struct DicomInfo<P> {
 
 impl DicomInfo<SeriesPath> {
     /// Create task.
-    pub fn into_task(self, ndicom: usize) -> Signature<register_pacs_series> {
+    pub fn into_task(self, ndicom: u32) -> Signature<register_pacs_series> {
         register_pacs_series::new(
             self.PatientID,
             self.StudyDate
@@ -95,27 +96,9 @@ impl DicomInfo<SeriesPath> {
     }
 }
 
-/// A DICOM series and the number of files received for it.
-pub(crate) struct SeriesCount {
-    pub info: DicomInfo<SeriesPath>,
-    pub count: usize,
-}
-
-impl SeriesCount {
-    pub(crate) fn new(dcm: DicomInfo<DicomFilePath>) -> Self {
-        Self {
-            count: 1,
-            info: dcm.into(),
-        }
-    }
-
-    pub(crate) fn into_task(self) -> Signature<register_pacs_series> {
-        self.info.into_task(self.count)
-    }
-}
-
 /// An [SeriesEvent] for a pending task of writing a DICOM file to storage.
-pub(crate) type PendingDicomInstance = SeriesEvent<JoinHandle<Result<(), ()>>, SeriesCount>;
+pub(crate) type PendingDicomInstance =
+    SeriesEvent<JoinHandle<Result<(), DicomStorageError>>, DicomInfo<SeriesPath>>;
 
 /// The set of metadata which uniquely identifies a DICOM series in *CUBE*.
 ///

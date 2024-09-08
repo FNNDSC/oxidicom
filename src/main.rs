@@ -8,8 +8,8 @@ use std::sync::LazyLock;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
-    init_tracing_subscriber().unwrap();
-    init_otel_tracing().unwrap();
+    init_tracing_subscriber()?;
+    init_otel_tracing()?;
     let result = run_everything_from_env(None).await;
     opentelemetry::global::shutdown_tracer_provider();
     result

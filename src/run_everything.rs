@@ -17,7 +17,7 @@ pub async fn run_everything<F>(
     OxidicomEnvOptions {
         amqp_address,
         files_root,
-        progress_nats_address,
+        nats_address,
         progress_interval,
         scp,
         scp_max_pdu_length,
@@ -37,6 +37,11 @@ where
         task_routes = [ "pacsfiles.tasks.register_pacs_series" => &queue_name ],
     )
     .await?;
+    let nats_client = if let Some(address) = nats_address {
+        Some(async_nats::connect(address).await?)
+    } else {
+        None
+    };
 
     let (tx_association, rx_association) = mpsc::unbounded_channel();
     let (tx_storetasks, rx_storetasks) = mpsc::unbounded_channel();
@@ -57,7 +62,7 @@ where
         association_series_state_loop(rx_association, tx_storetasks, files_root)
             .map(|r| r.unwrap()),
         series_synchronizer(rx_storetasks, tx_register),
-        cube_pacsfile_notifier(rx_register, celery)
+        cube_pacsfile_notifier(rx_register, celery, nats_client, progress_interval)
     )?;
     listener_handle.await?
 }

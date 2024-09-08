@@ -121,7 +121,6 @@ mod tests {
         let (sink_tx, mut sink_rx) = unbounded_channel();
         let synchronizer = series_synchronizer(source_rx, sink_tx);
         let source = async move {
-            let duration = Duration::from_millis(100);
             source_tx.send(("A", dummy_task(100, "second"))).unwrap();
             source_tx.send(("A", dummy_task(150, "third"))).unwrap();
             source_tx.send(("A", dummy_task(50, "first"))).unwrap();

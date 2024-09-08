@@ -4,6 +4,7 @@ mod dicomrs_settings;
 mod enums;
 mod error;
 mod listener_tcp_loop;
+mod lonk;
 mod notifier;
 mod pacs_file;
 mod patient_age;

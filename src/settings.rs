@@ -10,7 +10,7 @@ pub struct OxidicomEnvOptions {
     pub files_root: Utf8PathBuf,
     #[serde(default = "default_queue_name")]
     pub queue_name: String,
-    pub progress_nats_address: Option<String>,
+    pub nats_address: Option<String>,
     #[serde(with = "humantime_serde", default = "default_progress_interval")]
     pub progress_interval: std::time::Duration,
     pub scp: DicomRsSettings,
