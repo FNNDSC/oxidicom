@@ -20,7 +20,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-24.04
-    if: false  # FIXME delete line when I am done figuring things out
     steps:
     - uses: actions/checkout@v4
     - name: Start services
@@ -50,8 +49,7 @@ jobs:
   build-rust:
     name: Build Rust binary
     runs-on: ubuntu-24.04
-    # FIXME uncomment line below when I am done figuring things out
-    # needs: [ test ]
+    needs: [ test ]
     strategy:
       matrix:
         target:
