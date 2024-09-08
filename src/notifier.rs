@@ -1,5 +1,6 @@
 use crate::enums::SeriesEvent;
 use crate::error::{DicomStorageError, HandleLoopError};
+use crate::limiter::SubjectLimiter;
 use crate::lonk::{done_message, error_message, progress_message, subject_of};
 use crate::types::{DicomInfo, SeriesKey, SeriesPath};
 use bytes::Bytes;
@@ -27,6 +28,7 @@ pub async fn cube_pacsfile_notifier(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let receiver_loop = async {
         let mut counts: SeriesCounts = Default::default();
+        let limiter = Arc::new(SubjectLimiter::new(progress_interval));
         while let Some((series, event)) = receiver.recv().await {
             tx.send(handle_event(
                 &mut counts,
@@ -34,6 +36,7 @@ pub async fn cube_pacsfile_notifier(
                 event,
                 &celery,
                 nats_client.clone(),
+                Arc::clone(&limiter),
             ))
             .unwrap();
         }
@@ -66,12 +69,13 @@ fn handle_event(
     event: SeriesEvent<Result<(), DicomStorageError>, DicomInfo<SeriesPath>>,
     celery_client: &Arc<celery::Celery>,
     nats_client: Option<async_nats::Client>,
+    limiter: Arc<SubjectLimiter<String>>,
 ) -> RegistrationTask {
     match event {
         SeriesEvent::Instance(result) => {
             let payload = count_series(series_key.clone(), counts, result);
             tokio::spawn(async move {
-                maybe_send_lonk(nats_client, &series_key, payload).await
+                maybe_send_lonk(nats_client, limiter, &series_key, payload).await
             })
         }
         SeriesEvent::Finish(series_info) => {
@@ -79,7 +83,7 @@ fn handle_event(
             let ndicom = counts.remove(&series_key).unwrap_or(0);
             tokio::spawn(async move {
                 let (a, b) = tokio::join!(
-                    maybe_send_final_progress_messages(nats_client, &series_key, ndicom),
+                    maybe_send_final_progress_messages(nats_client, limiter, &series_key, ndicom),
                     send_registration_task_to_celery(series_info, ndicom, &celery_client)
                 );
                 a.and(b)
@@ -107,11 +111,12 @@ fn count_series(
 
 async fn maybe_send_lonk(
     client: Option<async_nats::Client>,
+    limiter: Arc<SubjectLimiter<String>>,
     series: &SeriesKey,
     payload: Bytes,
 ) -> Result<(), ()> {
     if let Some(client) = client {
-        send_lonk(client, series, payload)
+        send_lonk(client, limiter, series, payload)
             .await
             .map_err(|e| {
                 tracing::error!(error = e.to_string());
@@ -124,17 +129,26 @@ async fn maybe_send_lonk(
 
 async fn send_lonk(
     client: async_nats::Client,
+    limiter: Arc<SubjectLimiter<String>>,
     series: &SeriesKey,
     payload: Bytes,
 ) -> Result<(), async_nats::PublishError> {
-    client.publish(subject_of(series), payload).await
+    let subject = subject_of(series);
+    limiter
+        .lock(subject.clone(), client.publish(subject, payload))
+        .await
+        .unwrap_or(Ok(()))
 }
 
 async fn maybe_send_final_progress_messages(
     client: Option<async_nats::Client>,
+    limiter: Arc<SubjectLimiter<String>>,
     series: &SeriesKey,
     ndicom: u32,
 ) -> Result<(), ()> {
+    // ensures prior progress messages are done being sent
+    limiter.forget(&subject_of(series)).await;
+
     if let Some(client) = client {
         send_final_progress_messages(client, series, ndicom)
             .await
@@ -153,7 +167,9 @@ async fn send_final_progress_messages(
     ndicom: u32,
 ) -> Result<(), async_nats::PublishError> {
     let subject = subject_of(series);
-    client.publish(subject.clone(), progress_message(ndicom)).await?;
+    client
+        .publish(subject.clone(), progress_message(ndicom))
+        .await?;
     client.publish(subject, done_message()).await
 }
 

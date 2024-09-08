@@ -95,3 +95,17 @@ fn deserialize_params<T: celery::task::Task, D: serde::de::DeserializeOwned>(
     }
     panic!("Expected body to be an array, but it is not.")
 }
+
+pub async fn assert_lonk_messages(messages: Vec<async_nats::Message>) {
+    println!("DUMPING MESSAGES");
+    for message in messages {
+        let hex = message
+            .payload
+            .iter()
+            .map(|b| format!("{b:#04x}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        println!("{} <-- {}", message.subject, hex);
+    }
+    println!("DUMPING MESSAGES FINISH");
+}
