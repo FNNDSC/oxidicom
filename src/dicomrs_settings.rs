@@ -1,13 +1,8 @@
 use crate::transfer::ABSTRACT_SYNTAXES;
-use aliri_braid::braid;
 use dicom::dictionary_std::uids;
 use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom::ul::association::server::AcceptAny;
 use dicom::ul::ServerAssociationOptions;
-
-/// The AE title of a peer PACS server pushing DICOMs to us.
-#[braid(serde)]
-pub struct AETitle;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct DicomRsSettings {

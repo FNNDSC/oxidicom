@@ -20,8 +20,8 @@ use tokio::sync::mpsc::UnboundedSender;
 use ulid::Ulid;
 
 use crate::association_error::{AssociationError, AssociationError::*};
-use crate::dicomrs_settings::AETitle;
 use crate::enums::AssociationEvent;
+use crate::AETitle;
 
 /// Handle an "association" from an "SCU" (i.e. handle when someone is trying to give us DICOM files).
 ///

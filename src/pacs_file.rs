@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::dicomrs_settings::AETitle;
+use crate::AETitle;
 use dicom::dictionary_std::tags;
 use dicom::object::{DefaultDicomObject, Tag};
 

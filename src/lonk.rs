@@ -6,16 +6,16 @@ use crate::error::DicomStorageError;
 use crate::types::SeriesKey;
 use bytes::Bytes;
 
-const MESSAGE_NDICOM: u8 = 0x01;
-const MESSAGE_ERROR: u8 = 0x02;
-const DONE_MESSAGE: [u8; 1] = [0x00];
+pub const MESSAGE_NDICOM: u8 = 0x01;
+pub const MESSAGE_ERROR: u8 = 0x02;
+pub const DONE_MESSAGE: [u8; 1] = [0x00];
 
-pub(crate) fn done_message() -> Bytes {
+pub fn done_message() -> Bytes {
     Bytes::from_static(&DONE_MESSAGE)
 }
 
 /// Encode a LONK progress message.
-pub(crate) fn progress_message(ndicom: u32) -> Bytes {
+pub fn progress_message(ndicom: u32) -> Bytes {
     let payload: Vec<u8> = [MESSAGE_NDICOM]
         .into_iter()
         .chain(ndicom.to_le_bytes())
@@ -24,7 +24,7 @@ pub(crate) fn progress_message(ndicom: u32) -> Bytes {
 }
 
 /// Encode a LONK error message.
-pub(crate) fn error_message(e: DicomStorageError) -> Bytes {
+pub fn error_message(e: DicomStorageError) -> Bytes {
     let mut payload = e.to_string().into_bytes();
     payload.insert(0, MESSAGE_ERROR);
     Bytes::from(payload)
@@ -33,7 +33,7 @@ pub(crate) fn error_message(e: DicomStorageError) -> Bytes {
 /// Get the NATS subject name for a series.
 ///
 /// Specification: <https://github.com/FNNDSC/chrisproject.org/blob/d251b021be742bf9aab3596366d2a6b707faeba1/docs/oxidicom.md#oxidicom-nats-subjects>
-pub(crate) fn subject_of(series: &SeriesKey) -> String {
+pub fn subject_of(series: &SeriesKey) -> String {
     format!(
         "oxidicom.{}.{}",
         &series.pacs_name,

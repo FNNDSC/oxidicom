@@ -1,8 +1,8 @@
-use crate::dicomrs_settings::AETitle;
 use crate::enums::{AssociationEvent, SeriesEvent};
 use crate::error::{DicomRequiredTagError, DicomStorageError, HandleLoopError};
 use crate::pacs_file::{BadTag, PacsFileRegistration};
 use crate::types::{DicomFilePath, DicomInfo, PendingDicomInstance, SeriesKey, SeriesPath};
+use crate::AETitle;
 use camino::{Utf8Path, Utf8PathBuf};
 use dicom::object::DefaultDicomObject;
 use std::collections::HashMap;

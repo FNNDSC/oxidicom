@@ -1,7 +1,7 @@
 use dicom::object::DefaultDicomObject;
 use ulid::Ulid;
 
-use crate::dicomrs_settings::AETitle;
+use crate::AETitle;
 
 /// Events which occur during an association.
 pub(crate) enum AssociationEvent {

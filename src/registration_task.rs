@@ -6,8 +6,8 @@
 #![allow(non_snake_case)]
 #![allow(clippy::too_many_arguments)]
 
-use crate::dicomrs_settings::AETitle;
 use crate::types::SeriesPath;
+use crate::AETitle;
 
 /// A function stub with the same signature as the `register_pacs_series` celery task
 /// in *CUBE*'s Python code.

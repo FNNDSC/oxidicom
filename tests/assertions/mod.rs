@@ -9,7 +9,7 @@ use celery::prelude::BrokerError;
 use celery::protocol::MessageBody;
 pub use expected::EXPECTED_SERIES;
 use futures::{stream, StreamExt, TryStreamExt};
-use oxidicom::register_pacs_series;
+use oxidicom::{register_pacs_series, AETitle, SeriesKey};
 use std::collections::HashSet;
 
 pub async fn assert_files_stored(storage_path: &Utf8Path) {
@@ -96,16 +96,54 @@ fn deserialize_params<T: celery::task::Task, D: serde::de::DeserializeOwned>(
     panic!("Expected body to be an array, but it is not.")
 }
 
-pub async fn assert_lonk_messages(messages: Vec<async_nats::Message>) {
-    println!("DUMPING MESSAGES");
-    for message in messages {
-        let hex = message
-            .payload
+pub fn assert_lonk_messages(messages: Vec<async_nats::Message>) {
+    for series in &*EXPECTED_SERIES {
+        let series_key = SeriesKey {
+            SeriesInstanceUID: series.SeriesInstanceUID.to_string(),
+            pacs_name: AETitle::from(series.pacs_name.as_str()),
+        };
+        let subject = oxidicom::lonk::subject_of(&series_key);
+        let messages_of_series: Vec<_> = messages
             .iter()
-            .map(|b| format!("{b:#04x}"))
-            .collect::<Vec<_>>()
-            .join(" ");
-        println!("{} <-- {}", message.subject, hex);
+            .filter(|message| message.subject.as_str() == &subject)
+            .collect();
+        assert_messages_for_series(&messages_of_series, series.ndicom as u32)
     }
-    println!("DUMPING MESSAGES FINISH");
+}
+
+fn assert_messages_for_series(messages: &[&async_nats::Message], expected_ndicom: u32) {
+    assert!(
+        messages.len() >= 3,
+        "There must be at least 3 messages per series: (1) first progress message, \
+        (2) last progress message, (3) done message"
+    );
+
+    assert_eq!(
+        messages.last().unwrap().payload,
+        oxidicom::lonk::done_message()
+    );
+
+    let second_last = &messages[messages.len() - 2].payload;
+    assert_eq!(second_last[0], oxidicom::lonk::MESSAGE_NDICOM);
+    let last_ndicom = u32::from_le_bytes([
+        second_last[1],
+        second_last[2],
+        second_last[3],
+        second_last[4],
+    ]);
+    assert_eq!(last_ndicom, expected_ndicom);
+
+    let mut prev = 0;
+    for message in &messages[..messages.len() - 2] {
+        let payload = &message.payload;
+        let first_byte = *payload.first().unwrap();
+        assert_eq!(first_byte, oxidicom::lonk::MESSAGE_NDICOM);
+        assert_eq!(payload.len(), 1 + size_of::<u32>());
+        let num = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
+        assert!(
+            num > prev,
+            "ndicom progress message value must always increase."
+        );
+        prev = num;
+    }
 }

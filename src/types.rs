@@ -1,6 +1,5 @@
 #![allow(non_snake_case)]
 
-use crate::dicomrs_settings::AETitle;
 use crate::enums::SeriesEvent;
 use crate::error::DicomStorageError;
 use crate::registration_task::register_pacs_series;
@@ -16,6 +15,10 @@ pub(crate) struct DicomFilePath;
 /// Path in storage to a DICOM series folder.
 #[braid(serde)]
 pub(crate) struct SeriesPath;
+
+/// The AE title of a peer PACS server pushing DICOMs to us.
+#[braid(serde)]
+pub struct AETitle;
 
 impl From<DicomFilePath> for SeriesPath {
     fn from(path: DicomFilePath) -> Self {
@@ -104,7 +107,7 @@ pub(crate) type PendingDicomInstance =
 ///
 /// https://github.com/FNNDSC/ChRIS_ultron_backEnd/blob/v6.1.0/chris_backend/pacsfiles/models.py#L60
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub(crate) struct SeriesKey {
+pub struct SeriesKey {
     /// Series instance UID
     #[allow(non_snake_case)]
     pub SeriesInstanceUID: String,
