@@ -118,21 +118,6 @@ fn assert_messages_for_series(messages: &[&async_nats::Message], expected_ndicom
         (2) last progress message, (3) done message"
     );
 
-    assert_eq!(
-        messages.last().unwrap().payload,
-        oxidicom::lonk::done_message()
-    );
-
-    let second_last = &messages[messages.len() - 2].payload;
-    assert_eq!(second_last[0], oxidicom::lonk::MESSAGE_NDICOM);
-    let last_ndicom = u32::from_le_bytes([
-        second_last[1],
-        second_last[2],
-        second_last[3],
-        second_last[4],
-    ]);
-    assert_eq!(last_ndicom, expected_ndicom);
-
     let mut prev = 0;
     for message in &messages[..messages.len() - 2] {
         let payload = &message.payload;
@@ -146,4 +131,19 @@ fn assert_messages_for_series(messages: &[&async_nats::Message], expected_ndicom
         );
         prev = num;
     }
+
+    let second_last = &messages[messages.len() - 2].payload;
+    assert_eq!(second_last[0], oxidicom::lonk::MESSAGE_NDICOM);
+    let last_ndicom = u32::from_le_bytes([
+        second_last[1],
+        second_last[2],
+        second_last[3],
+        second_last[4],
+    ]);
+    assert_eq!(last_ndicom, expected_ndicom);
+
+    assert_eq!(
+        messages.last().unwrap().payload,
+        oxidicom::lonk::done_message()
+    );
 }
