@@ -132,6 +132,14 @@ fn assert_messages_for_series(messages: &[&async_nats::Message], expected_ndicom
         prev = num;
     }
 
+    let last_three_payloads = messages[messages.len() - 3..]
+        .iter()
+        .map(|message| &message.payload)
+        .map(|payload| payload.iter().map(|b| format!("{b:#04x}")).collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    tracing::info!("Last 3 payloads for series:\n---\n{}\n---", last_three_payloads);
+
     let second_last = &messages[messages.len() - 2].payload;
     assert_eq!(second_last[0], oxidicom::lonk::MESSAGE_NDICOM);
     let last_ndicom = u32::from_le_bytes([
