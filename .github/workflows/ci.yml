@@ -132,3 +132,30 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+
+  # Re-reun tests many times to detect race conditions.
+  # https://github.com/FNNDSC/oxidicom/issues/4
+  retest:
+    name: Rerun tests many times
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start services
+        run: docker compose up -d
+      - name: Download example data
+        run: docker compose run --rm get-data
+      - name: Cache rust build
+        uses: Swatinem/rust-cache@v2
+      - name: Compile test binary
+        run: cargo test --no-run --locked
+      - name: Run tests
+        run: |
+          set +e
+          for i in {1..20}; do
+            cargo test > log
+            rc=$?
+            if [ "$rc" != '0' ]; then
+              cat log
+              exit "$rc"
+            fi
+          done
