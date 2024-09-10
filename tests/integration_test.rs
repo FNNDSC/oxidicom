@@ -17,7 +17,7 @@ const CALLING_AE_TITLE: &str = "OXIDICOMTEST";
 async fn test_run_everything_from_env() {
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::INFO)
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .finish(),
     )
     .unwrap();

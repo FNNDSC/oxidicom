@@ -34,14 +34,9 @@ fn init_otel_tracing() -> Result<TracerProvider, TraceError> {
 }
 
 fn init_tracing_subscriber() -> Result<(), tracing::dispatcher::SetGlobalDefaultError> {
-    let level = if CONFIG.extract_inner_lossy("verbose").unwrap_or(false) {
-        tracing::Level::INFO
-    } else {
-        tracing::Level::WARN
-    };
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(level)
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .finish(),
     )
 }

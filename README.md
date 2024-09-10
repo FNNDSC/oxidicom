@@ -24,6 +24,7 @@ docker compose run --rm get-data
 Run all tests:
 
 ```shell
+export RUST_LOG=oxidicom=debug,integration_test=debug  # optional
 cargo test
 ```
 
