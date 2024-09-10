@@ -73,7 +73,7 @@ async fn test_run_everything_from_env() {
     // so that here in the test we can assert that the "DONE" messages do
     // indeed come last and no out-of-order/race condition errors are happening.
     // https://github.com/FNNDSC/oxidicom/issues/4
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(sleep_duration()).await;
     nats_shutdown_tx.send(true).await.unwrap();
     let lonk_messages = nats_subscriber_loop.await.unwrap();
 
@@ -104,5 +104,13 @@ fn create_test_options<P: AsRef<Utf8Path>>(
         scp_max_pdu_length: 16384,
         listener_threads: NonZeroUsize::new(2).unwrap(),
         listener_port: 11112,
+    }
+}
+
+fn sleep_duration() -> Duration {
+    if env!("CI") == "true" {
+        Duration::from_secs(10)
+    } else {
+        Duration::from_millis(500)
     }
 }
