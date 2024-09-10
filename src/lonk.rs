@@ -36,7 +36,7 @@ pub fn error_message(e: DicomStorageError) -> Bytes {
 pub fn subject_of(series: &SeriesKey) -> String {
     format!(
         "oxidicom.{}.{}",
-        &series.pacs_name,
+        sanitize_subject_part(series.pacs_name.as_str()),
         sanitize_subject_part(&series.SeriesInstanceUID)
     )
 }
