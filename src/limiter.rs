@@ -205,7 +205,10 @@ mod tests {
         };
         started_rx.await.unwrap();
         limiter.forget(&"subject1").await;
-        assert!(Arc::into_inner(task_finished).unwrap().into_inner().unwrap());
+        assert!(Arc::into_inner(task_finished)
+            .unwrap()
+            .into_inner()
+            .unwrap());
         task_a.await.unwrap();
     }
 
