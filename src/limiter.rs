@@ -187,35 +187,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_lock_during_busy_forget() {
+    async fn test_forget_waits_until_unlocked() {
         let interval = Duration::from_millis(200);
         let limiter = SubjectLimiter::new(interval);
-        let finished = Arc::new(Mutex::new(false));
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let start = Instant::now();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let task_finished = Arc::new(Mutex::new(false));
+
         let task_a = {
-            let finished = Arc::clone(&finished);
-            let start = start.clone();
             let raii = limiter.lock("subject1").unwrap();
+            let task_finished = Arc::clone(&task_finished);
             tokio::spawn(async move {
                 let _raii_binding = raii;
-                tx.send(()).unwrap();
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                *finished.lock().unwrap() = true;
-                start.elapsed()
+                started_tx.send(()).unwrap();
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                *task_finished.lock().unwrap() = true;
             })
         };
-        rx.await.unwrap();
+        started_rx.await.unwrap();
         limiter.forget(&"subject1").await;
-        let outer_elapsed = start.elapsed();
-        let task_a_elapsed = task_a.await.unwrap();
-        assert!(
-            outer_elapsed >= task_a_elapsed,
-            "SubjectLimiter::forget should have taken as long as task_a slept for, \
-            because it should wait on task_a to finish. \
-            outer_elapsed={outer_elapsed:?} task_a_elapsed={task_a_elapsed:?}"
-        );
-        assert!(*finished.lock().unwrap());
+        assert!(Arc::into_inner(task_finished).unwrap().into_inner().unwrap());
+        task_a.await.unwrap();
     }
 
     #[tokio::test]
