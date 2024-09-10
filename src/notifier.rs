@@ -1,6 +1,6 @@
 use crate::enums::SeriesEvent;
 use crate::error::{DicomStorageError, HandleLoopError};
-use crate::limiter::SubjectLimiter;
+use crate::limiter::{LockError, SubjectLimiter};
 use crate::lonk::{done_message, error_message, progress_message, subject_of};
 use crate::types::{DicomInfo, SeriesKey, SeriesPath};
 use bytes::Bytes;
@@ -76,12 +76,7 @@ fn handle_event(
     match event {
         SeriesEvent::Instance(result) => {
             let payload = count_series(series_key.clone(), counts, result);
-            limiter.lock(series_key.clone()).map(|raii| {
-                tokio::spawn(async move {
-                    let _raii_binding = raii;
-                    maybe_send_lonk(nats_client, &series_key, payload).await
-                })
-            })
+            send_lonk_task(limiter, series_key, payload, nats_client)
         }
         SeriesEvent::Finish(series_info) => {
             let celery_client = Arc::clone(celery_client);
@@ -97,6 +92,49 @@ fn handle_event(
             });
             Some(task)
         }
+    }
+}
+
+/// Maybe runs [send_lonk] in a [tokio::spawn] task, with tracing.
+fn send_lonk_task(
+    limiter: &SubjectLimiter<SeriesKey>,
+    series_key: SeriesKey,
+    payload: Bytes,
+    client: Option<async_nats::Client>,
+) -> Option<RegistrationTask> {
+    if let Some(client) = client {
+        match limiter.lock(series_key.clone()) {
+            Ok(raii) => {
+                let task = tokio::spawn(async move {
+                    let _raii_binding = raii;
+                    send_lonk(client, &series_key, payload)
+                        .await
+                        .map_err(|error| {
+                            tracing::error!(
+                                SeriesInstanceUID = &series_key.SeriesInstanceUID,
+                                pacs_name = series_key.pacs_name.as_str(),
+                                "{:?}",
+                                error
+                            )
+                        })
+                });
+                Some(task)
+            }
+            Err(reason) => {
+                let message = match reason {
+                    LockError::TooSoon => "a prior notification was sent recently",
+                    LockError::Busy => "a prior notification is currently being sent",
+                };
+                tracing::trace!(
+                    SeriesInstanceUID = series_key.SeriesInstanceUID,
+                    pacs_name = series_key.pacs_name.as_str(),
+                    "Notification not sent because {message}.",
+                );
+                None
+            }
+        }
+    } else {
+        None
     }
 }
 
@@ -117,26 +155,20 @@ fn count_series(
     }
 }
 
-async fn maybe_send_lonk(
-    client: Option<async_nats::Client>,
-    series: &SeriesKey,
-    payload: Bytes,
-) -> Result<(), ()> {
-    if let Some(client) = client {
-        send_lonk(client, series, payload).await.map_err(|e| {
-            tracing::error!(error = e.to_string());
-            ()
-        })
-    } else {
-        Ok(())
-    }
-}
-
 async fn send_lonk(
     client: async_nats::Client,
     series: &SeriesKey,
     payload: Bytes,
 ) -> Result<(), async_nats::PublishError> {
+    tracing::debug!(
+        SeriesInstanceUID = &series.SeriesInstanceUID,
+        pacs_name = series.pacs_name.as_str(),
+        payload = payload
+            .iter()
+            .map(|b| format!("{b:#04x}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
     client.publish(subject_of(series), payload).await
 }
 

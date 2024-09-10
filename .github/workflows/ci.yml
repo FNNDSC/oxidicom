@@ -35,6 +35,8 @@ jobs:
         source <(cargo llvm-cov show-env --export-prefix)
         cargo test --no-run --locked
     - name: Run tests
+      env:
+        RUST_LOG: oxidicom=debug,integration_test=debug
       run: cargo llvm-cov test --locked --codecov --output-path codecov.json
     - name: Print service logs
       if: failure()
@@ -149,6 +151,8 @@ jobs:
       - name: Compile test binary
         run: cargo test --no-run --locked
       - name: Run tests
+        env:
+          RUST_LOG: oxidicom::notifier=trace,oxidicom::limiter=trace,integration_test=trace
         run: |
           set +e
           failed_count=0

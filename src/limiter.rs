@@ -25,7 +25,7 @@ impl<S: Subject> SubjectLimiter<S> {
     /// Wraps the given async function `f`, calling it if it isn't currently
     /// running not has been called recently (within the duration specified
     /// to [`SubjectLimiter::new`]). Otherwise, does nothing (i.e. `f` is not called).
-    pub fn lock(&self, subject: S) -> Option<Permit<S>> {
+    pub fn lock(&self, subject: S) -> Result<Permit<S>, LockError> {
         self.0.lock(Instant::now(), subject)
     }
 
@@ -36,6 +36,16 @@ impl<S: Subject> SubjectLimiter<S> {
     pub async fn forget(&self, subject: &S) {
         self.0.forget(subject).await
     }
+}
+
+/// Reasons why [`SubjectLimiter::lock`] would not lock.
+#[derive(thiserror::Error, Debug, Eq, PartialEq, Copy, Clone)]
+pub(crate) enum LockError {
+    #[error("not enough time has elapsed since the lock was released.")]
+    TooSoon,
+
+    #[error("the lock is currently held.")]
+    Busy,
 }
 
 struct SubjectState {
@@ -76,6 +86,7 @@ impl<S: Subject> Drop for Permit<S> {
         if let Some(state) = subjects.get_mut(&self.subject) {
             state.last_sent = Instant::now(); // impure
         }
+        tracing::trace!("permit dropped");
     }
 }
 
@@ -88,17 +99,23 @@ impl<S: Subject> KindaPureSubjectLimiter<S> {
         }
     }
 
-    fn lock(&self, now: Instant, subject: S) -> Option<Permit<S>> {
+    fn lock(&self, now: Instant, subject: S) -> Result<Permit<S>, LockError> {
         let mut subjects = self.subjects.lock().unwrap();
         let state = subjects
             .entry(subject.clone())
-            .or_insert_with(|| SubjectState::new(self.start));
+            .and_modify(|_| {
+                tracing::trace!(subject = format!("{:?}", &subject), "old subject");
+            })
+            .or_insert_with(|| {
+                tracing::debug!(subject = format!("{:?}", &subject), "new subject");
+                SubjectState::new(self.start)
+            });
         if now - state.last_sent < self.interval {
-            return None;
+            return Err(LockError::TooSoon);
         }
         Arc::clone(&state.semaphore)
             .try_acquire_owned()
-            .ok()
+            .map_err(|_| LockError::Busy)
             .map(|permit| permit)
             .map(|permit| Permit {
                 _permit: permit,
@@ -113,16 +130,25 @@ impl<S: Subject> KindaPureSubjectLimiter<S> {
             let subjects = self.subjects.lock().unwrap();
             subjects
                 .get(subject)
-                .map(|state| Arc::clone(&state.semaphore).acquire_owned())
+                .map(|state| Arc::clone(&state.semaphore))
         };
         // self.subjects RAII dropped, we can acquire the semaphore now.
-        if let Some(acquire) = acquire {
-            match acquire.await {
+        if let Some(semaphore) = acquire {
+            if semaphore.available_permits() == 0 {
+                tracing::trace!(
+                    subject = format!("{subject:?}"),
+                    "lock is held, we will have to wait for it."
+                );
+            } else {
+                tracing::trace!(subject = format!("{subject:?}"), "lock is not held");
+            }
+            match semaphore.acquire_owned().await {
                 Ok(_owned_permit) => {
                     let mut subjects = self.subjects.lock().unwrap();
                     if let Some(state) = subjects.remove(subject) {
                         state.semaphore.close();
                     }
+                    tracing::debug!(subject = format!("{subject:?}"), "forgotten");
                 }
                 Err(_) => {
                     tracing::warn!(
@@ -175,15 +201,12 @@ mod tests {
         limiter: &SubjectLimiter<S>,
         subject: S,
     ) -> Option<JoinHandle<()>> {
-        if let Some(raii) = limiter.lock(subject) {
-            let task = tokio::spawn(async move {
+        limiter.lock(subject).ok().map(|raii| {
+            tokio::spawn(async move {
                 let _raii_binding = raii;
                 tokio::time::sleep(Duration::from_millis(10)).await;
-            });
-            Some(task)
-        } else {
-            None
-        }
+            })
+        })
     }
 
     #[tokio::test]
