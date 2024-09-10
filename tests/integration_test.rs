@@ -28,7 +28,6 @@ async fn test_run_everything_from_env() {
     let queue_name = names::Generator::default().next().unwrap();
     let options = create_test_options(temp_dir_path, queue_name.to_string());
     let amqp_address = options.amqp_address.clone();
-    let (nats_shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel(1);
     let nats = async_nats::connect(options.nats_address.as_ref().unwrap())
         .await
         .unwrap();
@@ -36,9 +35,10 @@ async fn test_run_everything_from_env() {
     let nats_subscriber_loop = tokio::spawn(async move {
         let mut messages = Vec::new();
         loop {
+            // Loop until no more messages received for a while.
             tokio::select! {
                 Some(v) = subscriber.next() => messages.push(v),
-                Some(_) = shutdown_rx.recv() => break,
+                _ = tokio::time::sleep(sleep_duration()) => break,
             }
         }
         messages
@@ -67,14 +67,7 @@ async fn test_run_everything_from_env() {
     // wait for server to shut down
     server_handle.await.unwrap().unwrap();
 
-    // Shutdown the NATS subscriber after waiting a little bit.
-    // Note: instead of shutting itself down after receiving the correct number
-    // of "DONE" messages, we prefer the naive approach of waiting instead,
-    // so that here in the test we can assert that the "DONE" messages do
-    // indeed come last and no out-of-order/race condition errors are happening.
-    // https://github.com/FNNDSC/oxidicom/issues/4
-    tokio::time::sleep(sleep_duration()).await;
-    nats_shutdown_tx.send(true).await.unwrap();
+    // get messages from NATS
     let lonk_messages = nats_subscriber_loop.await.unwrap();
 
     // run all assertions
