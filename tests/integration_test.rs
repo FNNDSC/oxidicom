@@ -71,11 +71,9 @@ async fn test_run_everything_from_env() {
     let lonk_messages = nats_subscriber_loop.await.unwrap();
 
     // run all assertions
+    assert_files_stored(&temp_dir_path).await;
+    assert_rabbitmq_messages(&amqp_address, &queue_name).await;
     assert_lonk_messages(lonk_messages);
-    tokio::join!(
-        assert_files_stored(&temp_dir_path),
-        assert_rabbitmq_messages(&amqp_address, &queue_name),
-    );
 }
 
 fn create_test_options<P: AsRef<Utf8Path>>(
