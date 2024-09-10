@@ -69,17 +69,16 @@ async fn test_run_everything_from_env() {
 
     // Shutdown the NATS subscriber after waiting a little bit.
     // Note: instead of shutting itself down after receiving the correct number
-    // of "DONE" messages, we prefer the naive approach of waiting 500ms instead,
-    // so that here in the test we can assert that the "DONE" messages do indeed
-    // come last and no out-of-order/race condition errors are happening.
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // of "DONE" messages, we prefer the naive approach of waiting instead,
+    // so that here in the test we can assert that the "DONE" messages do
+    // indeed come last and no out-of-order/race condition errors are happening.
+    // https://github.com/FNNDSC/oxidicom/issues/4
+    tokio::time::sleep(Duration::from_secs(2)).await;
     nats_shutdown_tx.send(true).await.unwrap();
     let lonk_messages = nats_subscriber_loop.await.unwrap();
 
     // run all assertions
-
     assert_lonk_messages(lonk_messages);
-
     tokio::join!(
         assert_files_stored(&temp_dir_path),
         assert_rabbitmq_messages(&amqp_address, &queue_name),
