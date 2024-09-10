@@ -108,7 +108,7 @@ fn create_test_options<P: AsRef<Utf8Path>>(
 }
 
 fn sleep_duration() -> Duration {
-    if env!("CI") == "true" {
+    if matches!(option_env!("CI"), Some("true")) {
         Duration::from_secs(10)
     } else {
         Duration::from_millis(500)
