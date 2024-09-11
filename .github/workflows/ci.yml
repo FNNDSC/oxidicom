@@ -30,10 +30,6 @@ jobs:
       uses: Swatinem/rust-cache@v2
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
-    - name: Compile test binary
-      run: |
-        source <(cargo llvm-cov show-env --export-prefix)
-        cargo test --no-run --locked
     - name: Run tests
       env:
         RUST_LOG: oxidicom=debug,integration_test=debug
