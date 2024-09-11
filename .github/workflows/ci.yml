@@ -63,28 +63,31 @@ jobs:
         target: ${{ matrix.target }}
         command: build
         args: --release --locked
-    - name: sha256sum
-      run: sha256sum target/${{ matrix.target }}/release oxidicom | tee oxidicom.sha256sum
+    - name: Move binary
+      run: |
+        mkdir dist
+        mv target/${{ matrix.target }}/release/oxidicom dist/oxidicom
+    - name: Calculate checksum
+      run: |
+        cd oxidicom
+        sha256 oxidicom | tee oxidicom.sha256sum
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: 'build__${{ matrix.target }}'
-        path: |
-          target/${{ matrix.target }}/release/oxidicom
-          oxidicom.sha256sum
+        path: dist
         if-no-files-found: 'error'
   build-docker:
     name: Build container image
     runs-on: ubuntu-24.04
     needs: [ build-rust ]
-    # if: github.event_name == 'push'
     steps:
     - name: Download x86_64 binary
       uses: actions/download-artifact@v4
     - name: Print out all files
       run: find -type f
     - name: Print expected checksums
-      run: find -type f -name '*.sha256sum' -exec cat '{}' \;
+      run: find -type f -name '*.sha256sum' -exec sh -c 'echo {} && cat {}' \;
     - name: Calculate actual checksums
       run: find -type f -name 'oxidicom' -exec sha256sum '{}' \;
     - name: Move binaries and mark executable
