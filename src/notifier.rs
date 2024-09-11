@@ -107,7 +107,7 @@ fn send_lonk_task(
             Ok(raii) => {
                 let task = tokio::spawn(async move {
                     let _raii_binding = raii;
-                    send_lonk(client, &series_key, payload)
+                    send_lonk(&client, &series_key, payload)
                         .await
                         .map_err(|error| {
                             tracing::error!(
@@ -156,7 +156,7 @@ fn count_series(
 }
 
 async fn send_lonk(
-    client: async_nats::Client,
+    client: &async_nats::Client,
     series: &SeriesKey,
     payload: Bytes,
 ) -> Result<(), async_nats::PublishError> {
@@ -178,7 +178,7 @@ async fn maybe_send_final_progress_messages(
     ndicom: u32,
 ) -> Result<(), ()> {
     if let Some(client) = client {
-        send_final_progress_messages(client, series, ndicom)
+        send_final_progress_messages(&client, series, ndicom)
             .await
             .map_err(|e| {
                 tracing::error!(error = e.to_string());
@@ -190,15 +190,12 @@ async fn maybe_send_final_progress_messages(
 }
 
 async fn send_final_progress_messages(
-    client: async_nats::Client,
+    client: &async_nats::Client,
     series: &SeriesKey,
     ndicom: u32,
 ) -> Result<(), async_nats::PublishError> {
-    let subject = subject_of(series);
-    client
-        .publish(subject.clone(), progress_message(ndicom))
-        .await?;
-    client.publish(subject, done_message()).await
+    send_lonk(client, series, progress_message(ndicom)).await?;
+    send_lonk(client, series, done_message()).await
 }
 
 async fn send_registration_task_to_celery(
