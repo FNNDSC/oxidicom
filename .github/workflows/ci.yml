@@ -67,11 +67,15 @@ jobs:
         target: ${{ matrix.target }}
         command: build
         args: --release --locked
+    - name: sha256sum
+      run: sha256sum target/${{ matrix.target }}/release oxidicom | tee oxidicom.sha256sum
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: 'build__${{ matrix.target }}'
-        path: 'target/${{ matrix.target }}/release/oxidicom'
+        path: |
+          target/${{ matrix.target }}/release/oxidicom
+          oxidicom.sha256sum
         if-no-files-found: 'error'
   build-docker:
     name: Build container image
@@ -83,6 +87,10 @@ jobs:
       uses: actions/download-artifact@v4
     - name: Print out all files
       run: find -type f
+    - name: Print expected checksums
+      run: find -type f -name '*.sha256sum' -exec cat '{}' \;
+    - name: Calculate actual checksums
+      run: find -type f -name 'oxidicom' -exec sha256sum '{}' \;
     - name: Move binaries and mark executable
       run: |
         mkdir -vp dist/linux/amd64 dist/linux/arm64
