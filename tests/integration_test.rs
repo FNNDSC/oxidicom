@@ -95,6 +95,7 @@ fn create_test_options<P: AsRef<Utf8Path>>(
         scp_max_pdu_length: 16384,
         listener_threads: NonZeroUsize::new(2).unwrap(),
         listener_port: 11112,
+        dev_sleep: None,
     }
 }
 
