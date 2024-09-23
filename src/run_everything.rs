@@ -24,6 +24,7 @@ pub async fn run_everything<F>(
         listener_threads,
         listener_port,
         queue_name,
+        dev_sleep,
     }: OxidicomEnvOptions,
     finite_connections: Option<usize>,
     on_start: Option<F>,
@@ -62,7 +63,13 @@ where
         association_series_state_loop(rx_association, tx_storetasks, files_root)
             .map(|r| r.unwrap()),
         series_synchronizer(rx_storetasks, tx_register),
-        cube_pacsfile_notifier(rx_register, celery, nats_client, progress_interval)
+        cube_pacsfile_notifier(
+            rx_register,
+            celery,
+            nats_client,
+            progress_interval,
+            dev_sleep
+        )
     )?;
     listener_handle.await?
 }

@@ -20,6 +20,8 @@ pub struct OxidicomEnvOptions {
     pub listener_threads: NonZeroUsize,
     #[serde(default = "default_listener_port")]
     pub listener_port: u16,
+    #[serde(with = "humantime_serde")]
+    pub dev_sleep: Option<std::time::Duration>,
 }
 
 /// The name of the queue used by the `register_pacs_series` celery task in *CUBE*'s code.

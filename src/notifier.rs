@@ -24,6 +24,7 @@ pub async fn cube_pacsfile_notifier(
     celery: Arc<celery::Celery>,
     nats_client: Option<async_nats::Client>,
     progress_interval: Duration,
+    sleep: Option<Duration>,
 ) -> Result<(), HandleLoopError> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let receiver_loop = async {
@@ -40,6 +41,9 @@ pub async fn cube_pacsfile_notifier(
             );
             if let Some(task) = task {
                 tx.send(task).unwrap();
+                if let Some(sleep_duration) = sleep {
+                    tokio::time::sleep(sleep_duration).await;
+                }
             }
         }
         drop(tx);
