@@ -20,7 +20,7 @@ pub struct OxidicomEnvOptions {
     pub listener_threads: NonZeroUsize,
     #[serde(default = "default_listener_port")]
     pub listener_port: u16,
-    #[serde(with = "humantime_serde")]
+    #[serde(with = "humantime_serde", default)]
     pub dev_sleep: Option<std::time::Duration>,
 }
 

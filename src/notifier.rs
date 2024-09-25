@@ -42,6 +42,7 @@ pub async fn cube_pacsfile_notifier(
             if let Some(task) = task {
                 tx.send(task).unwrap();
                 if let Some(sleep_duration) = sleep {
+                    tracing::info!("OXIDICOM_DEV_SLEEP is set, sleeping for {:?}. Please unset this option in production!", sleep_duration);
                     tokio::time::sleep(sleep_duration).await;
                 }
             }
