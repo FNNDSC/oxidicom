@@ -40,7 +40,7 @@ fn default_listener_port() -> u16 {
 }
 
 fn default_progress_interval() -> std::time::Duration {
-    std::time::Duration::from_nanos(1)
+    std::time::Duration::from_millis(500)
 }
 
 fn default_max_pdu_length() -> usize {
