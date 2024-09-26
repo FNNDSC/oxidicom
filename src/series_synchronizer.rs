@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 /// Waits on the [JoinHandle] of [PendingDicomInstance] for each `K`, so that
 /// [SeriesEvent::Finish] is the last message to be sent to `sender` for the respective `K`.
 pub(crate) async fn series_synchronizer<
-    K: Eq + Hash + Send + Clone + 'static,
+    K: Eq + Hash + Send + Clone + std::fmt::Debug + 'static,
     T: Send + 'static,
     L: Send + 'static,
 >(
@@ -28,15 +28,19 @@ pub(crate) async fn series_synchronizer<
                     enqueue_and_insert(series, task, &sender, &mut inflight_series)
                 }
                 SeriesEvent::Finish(final_message) => {
-                    let tasks_for_series = inflight_series
-                        .remove(&series)
-                        .expect("No tasks were received for the series.");
-                    let sender = Arc::clone(&sender);
-                    let task = tokio::task::spawn(async move {
-                        wait_on_all_then_flush(tasks_for_series, &sender, series, final_message)
-                            .await
-                    });
-                    tx.send(task).unwrap()
+                    if let Some(tasks_for_series) = inflight_series.remove(&series) {
+                        let sender = Arc::clone(&sender);
+                        let task = tokio::task::spawn(async move {
+                            wait_on_all_then_flush(tasks_for_series, &sender, series, final_message)
+                                .await
+                        });
+                        tx.send(task).unwrap()
+                    } else {
+                        tracing::error!(
+                            series = format!("{series:?}"),
+                            "No tasks were received for the series. This is a bug.",
+                        );
+                    }
                 }
             }
         }
