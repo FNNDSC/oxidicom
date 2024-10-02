@@ -18,6 +18,7 @@ Start [RabbitMQ](https://hub.docker.com/_/rabbitmq) and [Orthanc](https://www.or
 services for testing, then download test data:
 
 ```shell
+docker compose up -d
 docker compose run --rm get-data
 ```
 

@@ -1,13 +1,12 @@
 use std::fmt::Display;
 
-use crate::AETitle;
-use dicom::dictionary_std::tags;
-use dicom::object::{DefaultDicomObject, Tag};
-
 use crate::error::{name_of, DicomRequiredTagError, RequiredTagError};
 use crate::patient_age::parse_age;
 use crate::sanitize::sanitize_path;
 use crate::types::{DicomFilePath, DicomInfo};
+use crate::AETitle;
+use dicom::dictionary_std::tags;
+use dicom::object::{DefaultDicomObject, Tag};
 
 /// A wrapper of [PacsFileRegistrationRequest] along with the [DefaultDicomObject] it was created from.
 pub struct PacsFileRegistration {
@@ -38,14 +37,12 @@ fn get_series_tags(
     let SeriesInstanceUID = ttr(dcm, tags::SERIES_INSTANCE_UID)?;
     let SOPInstanceUID = ttr(dcm, tags::SOP_INSTANCE_UID)?;
     let PatientID = ttr(dcm, tags::PATIENT_ID)?;
-    let StudyDate_string = ttr(dcm, tags::STUDY_DATE)?; // required by CUBE
-    let StudyDate_format = time::macros::format_description!("[year][month][day]"); // DICOM DA format
-    let StudyDate = time::Date::parse(&StudyDate_string, &StudyDate_format).map_err(|_| {
-        RequiredTagError::Bad(BadTag {
-            tag: tags::STUDY_DATE,
-            value: Some(StudyDate_string.to_string()),
-        })
-    })?;
+    let StudyDate_string = ttr(dcm, tags::STUDY_DATE)?;
+    let StudyDate = parse_study_date(
+        StudyDate_string.as_str(),
+        &pacs_name,
+        &SeriesInstanceUID,
+    )?;
 
     // optional values
     let PatientName = tts(dcm, tags::PATIENT_NAME);
@@ -124,6 +121,34 @@ impl Display for BadTag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}={:?}", name_of(&self.tag), self.value)
     }
+}
+
+fn parse_study_date(
+    s: &str,
+    pacs_name: &AETitle,
+    series_instance_uid: &str,
+) -> Result<time::Date, RequiredTagError> {
+    let da_format = time::macros::format_description!("[year][month][day]");
+    time::Date::parse(s, &da_format)
+        .or_else(|_| {
+            let alt_format = time::macros::format_description!("[year]-[month]-[day]");
+            let parsed = time::Date::parse(s, &alt_format);
+            if parsed.is_ok() {
+                tracing::warn!(
+                    SeriesInstanceUID = series_instance_uid,
+                    pacs_name = pacs_name.as_str(),
+                    StudyDate = s,
+                    "StudyDate is not a valid DICOM DA string, but was successfully parsed as YYYY-MM-DD"
+                )
+            }
+            parsed
+        })
+        .map_err(|_| {
+            RequiredTagError::Bad(BadTag {
+                tag: tags::STUDY_DATE,
+                value: Some(s.to_string()),
+            })
+        })
 }
 
 /// Required string tag
