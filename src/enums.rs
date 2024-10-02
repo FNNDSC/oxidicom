@@ -1,9 +1,7 @@
 use dicom::object::DefaultDicomObject;
-use tokio::task::JoinHandle;
 use ulid::Ulid;
 
-use crate::dicomrs_settings::{ClientAETitle, OurAETitle};
-use crate::pacs_file::PacsFileRegistrationRequest;
+use crate::AETitle;
 
 /// Events which occur during an association.
 pub(crate) enum AssociationEvent {
@@ -12,11 +10,7 @@ pub(crate) enum AssociationEvent {
         /// UUID uniquely identifying the TCP connection instance
         ulid: Ulid,
         /// AE title of the client sending us DICOMs
-        aec: ClientAETitle,
-        /// Our AE title
-        aet: OurAETitle,
-        /// Address of the client sending us DICOMs
-        pacs_address: Option<String>,
+        aec: AETitle,
     },
     /// Received a DICOM file.
     DicomInstance {
@@ -35,14 +29,11 @@ pub(crate) enum AssociationEvent {
     },
 }
 
-/// A message sent from [crate::association_series_state_loop::association_series_state_loop]
-/// to [crate::registration_synchronizer::registration_synchronizer].
-pub(crate) enum PendingRegistration {
-    /// A task which, if successful, produces a [PacsFileRegistrationRequest] which should
-    /// be added to a batch in preparation for registration to the database.
-    ///
-    /// Error handling should be done by the sender, so the [Err] type is `()`.
-    Task(JoinHandle<Result<PacsFileRegistrationRequest, ()>>),
-    /// Indicates that no other tasks shall be sent for a given series.
-    End,
+/// An event which occurs during the reception of a DICOM series.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum SeriesEvent<T, F> {
+    /// DICOM instance received for a series.
+    Instance(T),
+    /// No more DICOM data will be received for the series.
+    Finish(F),
 }

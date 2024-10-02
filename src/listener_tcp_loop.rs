@@ -1,11 +1,10 @@
-use crate::dicomrs_settings::{ClientAETitle, DicomRsSettings};
+use crate::dicomrs_settings::DicomRsSettings;
 use crate::enums::AssociationEvent;
 use crate::scp::handle_association;
 use crate::thread_pool::ThreadPool;
 use opentelemetry::trace::{Status, TraceContextExt, Tracer};
 use opentelemetry::{global, Context, KeyValue};
 use opentelemetry_semantic_conventions as semconv;
-use std::collections::HashMap;
 use std::net::{SocketAddrV4, TcpListener, TcpStream};
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
@@ -14,20 +13,24 @@ use tokio::sync::mpsc::UnboundedSender;
 ///
 /// Every TCP connection is handled by [handle_association], which transmits DICOM instance file
 /// objects through the given `handler`.
-pub fn dicom_listener_tcp_loop(
+pub fn dicom_listener_tcp_loop<F>(
     address: SocketAddrV4,
     config: DicomRsSettings,
     finite_connections: Option<usize>,
     n_threads: usize,
     max_pdu_length: usize,
     handler: UnboundedSender<AssociationEvent>,
-    pacs_addresses: HashMap<ClientAETitle, String>,
-) -> anyhow::Result<()> {
+    on_start: Option<F>,
+) -> anyhow::Result<()>
+where
+    F: FnOnce(SocketAddrV4),
+{
     let listener = TcpListener::bind(address)?;
-    tracing::info!("listening on: tcp://{}", address);
+    if let Some(f) = on_start {
+        f(address)
+    };
+
     let mut pool = ThreadPool::new(n_threads, "dicom_listener");
-    let ae_title = Arc::new(config.aet.clone());
-    let pacs_addresses = Arc::new(pacs_addresses);
     let options = Arc::new(config.into());
     let handler = Arc::new(handler);
     let incoming: Box<dyn Iterator<Item = Result<TcpStream, _>>> =
@@ -42,8 +45,6 @@ pub fn dicom_listener_tcp_loop(
             Ok(scu_stream) => {
                 let options = Arc::clone(&options);
                 let handler = Arc::clone(&handler);
-                let ae_title = Arc::clone(&ae_title);
-                let pacs_address = Arc::clone(&pacs_addresses);
                 pool.execute(move || {
                     let ulid = ulid::Ulid::new();
                     let _context_guard = cx.attach();
@@ -57,15 +58,7 @@ pub fn dicom_listener_tcp_loop(
                         ];
                         context.span().set_attributes(peer_attributes);
                     }
-                    match handle_association(
-                        scu_stream,
-                        &options,
-                        max_pdu_length,
-                        &handler,
-                        ulid,
-                        &ae_title,
-                        &pacs_address,
-                    ) {
+                    match handle_association(scu_stream, &options, max_pdu_length, &handler, ulid) {
                         Ok(..) => {
                             handler
                                 .send(AssociationEvent::Finish { ulid, ok: true })

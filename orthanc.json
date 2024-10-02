@@ -312,7 +312,7 @@
      * and the third one is the TCP port number corresponding
      * to the DICOM protocol on the remote modality (usually 104).
      **/
-     "OXIDICOMTEST" : ["OXIDICOMTEST", "oxidicom", 11112 ]
+     "OXIDICOMTEST" : ["OXIDICOMTEST", "localhost", 11112 ]
 
     /**
      * A fourth parameter is available to enable patches for
