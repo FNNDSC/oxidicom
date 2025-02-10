@@ -23,6 +23,7 @@ pub async fn cube_pacsfile_notifier(
     )>,
     celery: Arc<celery::Celery>,
     nats_client: Option<async_nats::Client>,
+    root_subject: &str,
     progress_interval: Duration,
     sleep: Option<Duration>,
 ) -> Result<(), HandleLoopError> {
@@ -37,6 +38,7 @@ pub async fn cube_pacsfile_notifier(
                 event,
                 &celery,
                 nats_client.clone(),
+                root_subject,
                 &limiter,
             );
             if let Some(task) = task {
@@ -76,21 +78,28 @@ fn handle_event(
     event: SeriesEvent<Result<(), DicomStorageError>, DicomInfo<SeriesPath>>,
     celery_client: &Arc<celery::Celery>,
     nats_client: Option<async_nats::Client>,
+    root_subject: &str,
     limiter: &Arc<SubjectLimiter<SeriesKey>>,
 ) -> Option<RegistrationTask> {
     match event {
         SeriesEvent::Instance(result) => {
             let payload = count_series(series_key.clone(), counts, result);
-            send_lonk_task(limiter, series_key, payload, nats_client)
+            send_lonk_task(limiter, series_key, payload, nats_client, root_subject)
         }
         SeriesEvent::Finish(series_info) => {
             let celery_client = Arc::clone(celery_client);
             let limiter = Arc::clone(limiter);
             let ndicom = counts.remove(&series_key).unwrap_or(0);
+            let root_subject = root_subject.to_string();
             let task = tokio::spawn(async move {
                 limiter.forget(&series_key).await;
                 let (a, b) = tokio::join!(
-                    maybe_send_final_progress_messages(nats_client, &series_key, ndicom),
+                    maybe_send_final_progress_messages(
+                        nats_client,
+                        &root_subject,
+                        &series_key,
+                        ndicom
+                    ),
                     send_registration_task_to_celery(series_info, ndicom, &celery_client)
                 );
                 a.and(b)
@@ -106,13 +115,15 @@ fn send_lonk_task(
     series_key: SeriesKey,
     payload: Bytes,
     client: Option<async_nats::Client>,
+    root_subject: &str,
 ) -> Option<RegistrationTask> {
     if let Some(client) = client {
         match limiter.lock(series_key.clone()) {
             Ok(raii) => {
+                let root_subject = root_subject.to_string();
                 let task = tokio::spawn(async move {
                     let _raii_binding = raii;
-                    send_lonk(&client, &series_key, payload)
+                    send_lonk(&client, &root_subject, &series_key, payload)
                         .await
                         .map_err(|error| {
                             tracing::error!(
@@ -162,6 +173,7 @@ fn count_series(
 
 async fn send_lonk(
     client: &async_nats::Client,
+    root_subject: impl std::fmt::Display,
     series: &SeriesKey,
     payload: Bytes,
 ) -> Result<(), async_nats::PublishError> {
@@ -174,16 +186,18 @@ async fn send_lonk(
             .collect::<Vec<_>>()
             .join(" ")
     );
-    client.publish(subject_of(series), payload).await
+    let subject = subject_of(root_subject, series);
+    client.publish(subject, payload).await
 }
 
 async fn maybe_send_final_progress_messages(
     client: Option<async_nats::Client>,
+    root_subject: &str,
     series: &SeriesKey,
     ndicom: u32,
 ) -> Result<(), ()> {
     if let Some(client) = client {
-        send_final_progress_messages(&client, series, ndicom)
+        send_final_progress_messages(&client, root_subject, series, ndicom)
             .await
             .map_err(|e| {
                 tracing::error!(error = e.to_string());
@@ -196,11 +210,12 @@ async fn maybe_send_final_progress_messages(
 
 async fn send_final_progress_messages(
     client: &async_nats::Client,
+    root_subject: &str,
     series: &SeriesKey,
     ndicom: u32,
 ) -> Result<(), async_nats::PublishError> {
-    send_lonk(client, series, progress_message(ndicom)).await?;
-    send_lonk(client, series, done_message()).await
+    send_lonk(client, root_subject, series, progress_message(ndicom)).await?;
+    send_lonk(client, root_subject, series, done_message()).await
 }
 
 async fn send_registration_task_to_celery(

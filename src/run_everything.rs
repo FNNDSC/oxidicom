@@ -25,6 +25,7 @@ pub async fn run_everything<F>(
         listener_port,
         queue_name,
         dev_sleep,
+        root_subject,
     }: OxidicomEnvOptions,
     finite_connections: Option<usize>,
     on_start: Option<F>,
@@ -67,6 +68,7 @@ where
             rx_register,
             celery,
             nats_client,
+            &root_subject,
             progress_interval,
             dev_sleep
         )

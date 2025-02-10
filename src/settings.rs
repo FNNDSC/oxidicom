@@ -22,6 +22,8 @@ pub struct OxidicomEnvOptions {
     pub listener_port: u16,
     #[serde(with = "humantime_serde", default)]
     pub dev_sleep: Option<std::time::Duration>,
+    #[serde(default = "default_root_subject")]
+    pub root_subject: String,
 }
 
 /// The name of the queue used by the `register_pacs_series` celery task in *CUBE*'s code.
@@ -45,4 +47,8 @@ fn default_progress_interval() -> std::time::Duration {
 
 fn default_max_pdu_length() -> usize {
     16384
+}
+
+fn default_root_subject() -> String {
+    "oxidicom".to_string()
 }

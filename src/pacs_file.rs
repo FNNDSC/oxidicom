@@ -38,11 +38,7 @@ fn get_series_tags(
     let SOPInstanceUID = ttr(dcm, tags::SOP_INSTANCE_UID)?;
     let PatientID = ttr(dcm, tags::PATIENT_ID)?;
     let StudyDate_string = ttr(dcm, tags::STUDY_DATE)?;
-    let StudyDate = parse_study_date(
-        StudyDate_string.as_str(),
-        &pacs_name,
-        &SeriesInstanceUID,
-    )?;
+    let StudyDate = parse_study_date(StudyDate_string.as_str(), &pacs_name, &SeriesInstanceUID)?;
 
     // optional values
     let PatientName = tts(dcm, tags::PATIENT_NAME);

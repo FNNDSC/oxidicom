@@ -12,6 +12,8 @@ use futures::{stream, StreamExt, TryStreamExt};
 use oxidicom::{register_pacs_series, AETitle, SeriesKey};
 use std::collections::HashSet;
 
+pub const ROOT_SUBJECT: &str = "test.oxidicom";
+
 pub async fn assert_files_stored(storage_path: &Utf8Path) {
     let (expected, actual) = tokio::join!(expected_files(), find_files(storage_path));
     pretty_assertions::assert_eq!(expected, actual)
@@ -102,7 +104,7 @@ pub fn assert_lonk_messages(messages: Vec<async_nats::Message>) {
             SeriesInstanceUID: series.SeriesInstanceUID.to_string(),
             pacs_name: AETitle::from(series.pacs_name.as_str()),
         };
-        let subject = oxidicom::lonk::subject_of(&series_key);
+        let subject = oxidicom::lonk::subject_of(&ROOT_SUBJECT, &series_key);
         let messages_of_series: Vec<_> = messages
             .iter()
             .filter(|message| message.subject.as_str() == &subject)

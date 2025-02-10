@@ -5,6 +5,7 @@
 use crate::error::DicomStorageError;
 use crate::types::SeriesKey;
 use bytes::Bytes;
+use std::fmt::Display;
 
 pub const MESSAGE_NDICOM: u8 = 0x01;
 pub const MESSAGE_ERROR: u8 = 0x02;
@@ -33,9 +34,10 @@ pub fn error_message(e: DicomStorageError) -> Bytes {
 /// Get the NATS subject name for a series.
 ///
 /// Specification: <https://github.com/FNNDSC/chrisproject.org/blob/d251b021be742bf9aab3596366d2a6b707faeba1/docs/oxidicom.md#oxidicom-nats-subjects>
-pub fn subject_of(series: &SeriesKey) -> String {
+pub fn subject_of(root_subject: impl Display, series: &SeriesKey) -> String {
     format!(
-        "oxidicom.{}.{}",
+        "{}.{}.{}",
+        root_subject,
         sanitize_subject_part(series.pacs_name.as_str()),
         sanitize_subject_part(&series.SeriesInstanceUID)
     )

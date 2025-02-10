@@ -4,6 +4,7 @@ use camino::Utf8Path;
 use futures::StreamExt;
 use oxidicom::{run_everything, DicomRsSettings, OxidicomEnvOptions};
 use std::num::NonZeroUsize;
+use std::sync::Once;
 use std::time::Duration;
 
 mod assertions;
@@ -12,16 +13,12 @@ mod orthanc_client;
 const ORTHANC_URL: &str = "http://localhost:8042";
 const CALLING_AE_TITLE: &str = "OXIDICOMTEST";
 
+static INIT_LOGGING: Once = Once::new();
+
 /// Runs the DICOM listener and pushes 2 series to it in parallel.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_run_everything_from_env() {
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-            .finish(),
-    )
-    .unwrap();
-
+    init_logging();
     let temp_dir = tempfile::tempdir().unwrap();
     let temp_dir_path = Utf8Path::from_path(temp_dir.path()).unwrap();
 
@@ -31,7 +28,8 @@ async fn test_run_everything_from_env() {
     let nats = async_nats::connect(options.nats_address.as_ref().unwrap())
         .await
         .unwrap();
-    let mut subscriber = nats.subscribe("oxidicom.>").await.unwrap();
+    let subject = format!("{ROOT_SUBJECT}.>");
+    let mut subscriber = nats.subscribe(subject).await.unwrap();
     let nats_subscriber_loop = tokio::spawn(async move {
         let mut messages = Vec::new();
         loop {
@@ -96,6 +94,7 @@ fn create_test_options<P: AsRef<Utf8Path>>(
         listener_threads: NonZeroUsize::new(2).unwrap(),
         listener_port: 11112,
         dev_sleep: None,
+        root_subject: ROOT_SUBJECT.to_string(),
     }
 }
 
@@ -105,4 +104,15 @@ fn sleep_duration() -> Duration {
     } else {
         Duration::from_millis(500)
     }
+}
+
+fn init_logging() {
+    INIT_LOGGING.call_once(|| {
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::FmtSubscriber::builder()
+                .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+                .finish(),
+        )
+        .unwrap()
+    })
 }
