@@ -7,8 +7,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dicom = "0.7.1"
-snafu = "0.8.4"
+dicom = "0.8.1"
+dicom-ul = { version = "0.8.1", features = [ "async" ]}
 thiserror = "1.0.63"
 camino = { version = "1.1.9", features = ["serde1"] }
 fs-err = { version = "2.11.0", features = ["tokio"] }

@@ -1,7 +1,7 @@
 use crate::enums::SeriesEvent;
 use crate::error::{DicomStorageError, HandleLoopError};
 use crate::limiter::{LockError, SubjectLimiter};
-use crate::lonk::{done_message, error_message, progress_message, subject_of};
+use crate::lonk::{done_message, error_message, progress_message, send_lonk};
 use crate::types::{DicomInfo, SeriesKey, SeriesPath};
 use bytes::Bytes;
 use std::collections::HashMap;
@@ -169,25 +169,6 @@ fn count_series(
         }
         Err(e) => error_message(e),
     }
-}
-
-async fn send_lonk(
-    client: &async_nats::Client,
-    root_subject: impl std::fmt::Display,
-    series: &SeriesKey,
-    payload: Bytes,
-) -> Result<(), async_nats::PublishError> {
-    tracing::debug!(
-        SeriesInstanceUID = &series.SeriesInstanceUID,
-        pacs_name = series.pacs_name.as_str(),
-        payload = payload
-            .iter()
-            .map(|b| format!("{b:#04x}"))
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
-    let subject = subject_of(root_subject, series);
-    client.publish(subject, payload).await
 }
 
 async fn maybe_send_final_progress_messages(

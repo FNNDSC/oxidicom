@@ -36,6 +36,9 @@ pub(crate) async fn series_synchronizer<
                         });
                         tx.send(task).unwrap()
                     } else {
+                        // FIXME THIS IS HAPPENING WHEN THE SAME SERIES IS BEING PUSHED MORE
+                        // THAN ONCE AT THE SAME TIME. NEED TO DISCRIMINATE BETWEEN SERIES
+                        // BY ASSOCIATION_ULID
                         tracing::error!(
                             series = format!("{series:?}"),
                             "No tasks were received for the series. This is a bug.",

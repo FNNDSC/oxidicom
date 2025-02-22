@@ -61,8 +61,14 @@ where
     });
 
     tokio::try_join!(
-        association_series_state_loop(rx_association, tx_storetasks, files_root)
-            .map(|r| r.unwrap()),
+        association_series_state_loop(
+            rx_association,
+            tx_storetasks,
+            files_root,
+            nats_client.clone(),
+            &root_subject
+        )
+        .map(|r| r.unwrap()),
         series_synchronizer(rx_storetasks, tx_register),
         cube_pacsfile_notifier(
             rx_register,

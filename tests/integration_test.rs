@@ -1,19 +1,19 @@
-use crate::assertions::*;
 use crate::orthanc_client::orthanc_store;
+use crate::util::assertions::*;
+use crate::util::dicom_wo_studydate::{create_dicom_without_studydate, SERIES};
+use crate::util::expected::EXPECTED_SERIES;
+use crate::util::helpers::*;
+use crate::util::send_dicom::store_one_dicom;
 use camino::Utf8Path;
 use futures::StreamExt;
-use oxidicom::{run_everything, DicomRsSettings, OxidicomEnvOptions};
-use std::num::NonZeroUsize;
-use std::sync::Once;
-use std::time::Duration;
+use oxidicom::lonk::subject_of;
+use oxidicom::run_everything;
 
-mod assertions;
 mod orthanc_client;
+mod util;
 
 const ORTHANC_URL: &str = "http://localhost:8042";
 const CALLING_AE_TITLE: &str = "OXIDICOMTEST";
-
-static INIT_LOGGING: Once = Once::new();
 
 /// Runs the DICOM listener and pushes 2 series to it in parallel.
 #[tokio::test(flavor = "multi_thread")]
@@ -23,7 +23,12 @@ async fn test_run_everything_from_env() {
     let temp_dir_path = Utf8Path::from_path(temp_dir.path()).unwrap();
 
     let queue_name = names::Generator::default().next().unwrap();
-    let options = create_test_options(temp_dir_path, queue_name.to_string());
+    let options = create_test_options(
+        temp_dir_path,
+        queue_name.to_string(),
+        ROOT_SUBJECT.to_string(),
+        11112, // Orthanc is configured to push here
+    );
     let amqp_address = options.amqp_address.clone();
     let nats = async_nats::connect(options.nats_address.as_ref().unwrap())
         .await
@@ -74,45 +79,65 @@ async fn test_run_everything_from_env() {
     assert_lonk_messages(lonk_messages);
 }
 
-fn create_test_options<P: AsRef<Utf8Path>>(
-    files_root: P,
-    queue_name: String,
-) -> OxidicomEnvOptions {
-    OxidicomEnvOptions {
-        amqp_address: "amqp://localhost:5672".to_string(),
-        files_root: files_root.as_ref().to_path_buf(),
-        queue_name,
-        nats_address: Some("localhost:4222".to_string()),
-        progress_interval: Duration::from_millis(50),
-        scp: DicomRsSettings {
-            aet: "OXIDICOMTEST".to_string(),
-            strict: false,
-            uncompressed_only: false,
-            promiscuous: true,
-        },
-        scp_max_pdu_length: 16384,
-        listener_threads: NonZeroUsize::new(2).unwrap(),
-        listener_port: 11112,
-        dev_sleep: None,
-        root_subject: ROOT_SUBJECT.to_string(),
-    }
-}
+#[tokio::test(flavor = "multi_thread")]
+async fn test_missing_studydate_error_sent_to_nats() {
+    // SMELL: lots of code duplication with test_run_everything_from_env
+    init_logging();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir_path = Utf8Path::from_path(temp_dir.path()).unwrap();
+    let queue_name = names::Generator::default().next().unwrap();
+    let root_subject = "test-missing-studydate.oxidicom";
+    let port = 11113;
+    let options = create_test_options(
+        temp_dir_path,
+        queue_name.to_string(),
+        root_subject.to_string(),
+        port,
+    );
+    let nats = async_nats::connect(options.nats_address.as_ref().unwrap())
+        .await
+        .unwrap();
+    let subject = format!("{root_subject}.>");
+    let mut subscriber = nats.subscribe(subject).await.unwrap();
+    let nats_subscriber_loop = tokio::spawn(async move {
+        let mut messages = Vec::new();
+        loop {
+            // Loop until no more messages received for a while.
+            tokio::select! {
+                Some(v) = subscriber.next() => messages.push(v),
+                _ = tokio::time::sleep(sleep_duration()) => break,
+            }
+        }
+        messages
+    });
 
-fn sleep_duration() -> Duration {
-    if matches!(option_env!("CI"), Some("true")) {
-        Duration::from_secs(10)
-    } else {
-        Duration::from_millis(500)
-    }
-}
+    let (start_tx, start_rx) = tokio::sync::oneshot::channel();
+    let on_start = move |x| start_tx.send(x).unwrap();
 
-fn init_logging() {
-    INIT_LOGGING.call_once(|| {
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::FmtSubscriber::builder()
-                .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-                .finish(),
-        )
-        .unwrap()
-    })
+    let server = run_everything(options, Some(1), Some(on_start));
+    let server_handle = tokio::spawn(server);
+
+    // wait for message from `on_start` indicating server is ready for connections
+    start_rx.await.unwrap();
+
+    // send one DICOM data for storage
+    let dcm = create_dicom_without_studydate();
+    let address = format!("127.0.0.1:{port}");
+    store_one_dicom(&address, dcm).await;
+
+    // wait for server to shut down
+    let result = server_handle.await.unwrap();
+    assert!(result.is_err());
+
+    // get messages from NATS
+    let lonk_messages = nats_subscriber_loop.await.unwrap();
+    let mut messages_iter = lonk_messages.into_iter();
+    let message = messages_iter
+        .next()
+        .expect("Should have received one message from NATS");
+    assert!(
+        messages_iter.next().is_none(),
+        "Should have only received 1 message from NATS, but received at least 2."
+    );
+    assert_eq!(message.subject.as_str(), subject_of(root_subject, &SERIES).as_str());
 }

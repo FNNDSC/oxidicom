@@ -1,13 +1,10 @@
-mod expected;
-mod model;
-
-use crate::assertions::model::SeriesParams;
+pub use crate::util::expected::EXPECTED_SERIES;
+use crate::util::model::SeriesParams;
 use async_walkdir::WalkDir;
 use camino::{Utf8Path, Utf8PathBuf};
 use celery::broker::{AMQPBrokerBuilder, BrokerBuilder};
 use celery::prelude::BrokerError;
 use celery::protocol::MessageBody;
-pub use expected::EXPECTED_SERIES;
 use futures::{stream, StreamExt, TryStreamExt};
 use oxidicom::{register_pacs_series, AETitle, SeriesKey};
 use std::collections::HashSet;

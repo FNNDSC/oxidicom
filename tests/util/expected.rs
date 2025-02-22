@@ -1,4 +1,4 @@
-use crate::assertions::model::SeriesParams;
+use crate::util::model::SeriesParams;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 

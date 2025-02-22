@@ -5,7 +5,6 @@
 use crate::error::DicomStorageError;
 use crate::types::SeriesKey;
 use bytes::Bytes;
-use std::fmt::Display;
 
 pub const MESSAGE_NDICOM: u8 = 0x01;
 pub const MESSAGE_ERROR: u8 = 0x02;
@@ -34,7 +33,7 @@ pub fn error_message(e: DicomStorageError) -> Bytes {
 /// Get the NATS subject name for a series.
 ///
 /// Specification: <https://github.com/FNNDSC/chrisproject.org/blob/d251b021be742bf9aab3596366d2a6b707faeba1/docs/oxidicom.md#oxidicom-nats-subjects>
-pub fn subject_of(root_subject: impl Display, series: &SeriesKey) -> String {
+pub fn subject_of(root_subject: impl std::fmt::Display, series: &SeriesKey) -> String {
     format!(
         "{}.{}.{}",
         root_subject,
@@ -47,4 +46,23 @@ pub fn subject_of(root_subject: impl Display, series: &SeriesKey) -> String {
 /// https://docs.nats.io/nats-concepts/subjects#characters-allowed-and-recommended-for-subject-names
 fn sanitize_subject_part(name: &str) -> String {
     name.replace(&[' ', '.', '*', '>'], "_").replace('\0', "")
+}
+
+pub(crate) async fn send_lonk(
+    client: &async_nats::Client,
+    root_subject: impl std::fmt::Display,
+    series: &SeriesKey,
+    payload: Bytes,
+) -> Result<(), async_nats::PublishError> {
+    tracing::debug!(
+        SeriesInstanceUID = &series.SeriesInstanceUID,
+        pacs_name = series.pacs_name.as_str(),
+        payload = payload
+            .iter()
+            .map(|b| format!("{b:#04x}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    let subject = subject_of(root_subject, series);
+    client.publish(subject, payload).await
 }

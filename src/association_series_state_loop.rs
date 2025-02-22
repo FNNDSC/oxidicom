@@ -1,11 +1,13 @@
 use crate::enums::{AssociationEvent, SeriesEvent};
 use crate::error::{DicomRequiredTagError, DicomStorageError, HandleLoopError};
+use crate::lonk::{error_message, send_lonk};
 use crate::pacs_file::{BadTag, PacsFileRegistration};
 use crate::types::{DicomFilePath, DicomInfo, PendingDicomInstance, SeriesKey, SeriesPath};
 use crate::AETitle;
 use camino::{Utf8Path, Utf8PathBuf};
 use dicom::object::DefaultDicomObject;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::sync::Arc;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -38,12 +40,20 @@ pub(crate) async fn association_series_state_loop(
     mut receiver: UnboundedReceiver<AssociationEvent>,
     sender: UnboundedSender<(SeriesKey, PendingDicomInstance)>,
     files_root: Utf8PathBuf,
+    nats_client: Option<async_nats::Client>,
+    root_subject: &str,
 ) -> Result<Result<(), HandleLoopError>, SendError<(SeriesKey, PendingDicomInstance)>> {
     let mut inflight_associations: InflightAssociations = Default::default();
     let mut everything_ok = true;
     let files_root = Arc::new(files_root);
     while let Some(event) = receiver.recv().await {
-        match match_event(event, &mut inflight_associations, &files_root) {
+        match match_event(
+            event,
+            &mut inflight_associations,
+            &files_root,
+            &nats_client,
+            root_subject,
+        ) {
             Ok(messages) => {
                 for message in messages {
                     sender.send(message)?
@@ -73,6 +83,8 @@ fn match_event(
     event: AssociationEvent,
     inflight_associations: &mut InflightAssociations,
     files_root: &Arc<Utf8PathBuf>,
+    nats_client: &Option<async_nats::Client>,
+    root_subject: &str,
 ) -> Result<Vec<(SeriesKey, PendingDicomInstance)>, ()> {
     match event {
         AssociationEvent::Start { ulid, aec } => {
@@ -83,7 +95,27 @@ fn match_event(
             match receive_dicom_instance(ulid, dcm, inflight_associations, files_root) {
                 Ok((series, task)) => Ok(vec![(series, SeriesEvent::Instance(task))]),
                 Err(e) => {
-                    tracing::error!(association_ulid = ulid.to_string(), message = e.to_string());
+                    let series = SeriesKey::new(
+                        e.obj
+                            .element(dicom::dictionary_std::tags::SERIES_INSTANCE_UID)
+                            .ok()
+                            .and_then(|e| e.string().map(|s| s.trim()).ok())
+                            .unwrap_or("UNKNOWN")
+                            .to_string(),
+                        inflight_associations
+                            .get(&ulid)
+                            .map(|a| a.pacs_name.clone())
+                            .unwrap_or_else(|| AETitle::from_static("UNKNOWN")),
+                    );
+                    tracing::error!(
+                        association_ulid = ulid.to_string(),
+                        SeriesInstanceUID = &series.SeriesInstanceUID,
+                        pacs_name = series.pacs_name.as_str(),
+                        message = e.to_string()
+                    );
+                    let nats_client = nats_client.clone();
+                    let root_subject = root_subject.to_string();
+                    tokio::spawn(maybe_send_lonk_error(nats_client, root_subject, series, e));
                     Err(())
                 }
             }
@@ -94,6 +126,24 @@ fn match_event(
                 .expect("Unknown association ULID");
             Ok(finish_association(association.series))
         }
+    }
+}
+
+/// Send an error message in LONK encoding to NATS. If transmission fails, whatever.
+async fn maybe_send_lonk_error(
+    nats_client: Option<async_nats::Client>,
+    root_subject: impl Display,
+    series: SeriesKey,
+    e: DicomRequiredTagError,
+) {
+    if let Some(client) = nats_client {
+        let payload = error_message(e.error.into());
+        send_lonk(&client, root_subject, &series, payload)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!(error = e.to_string());
+                ()
+            })
     }
 }
 
