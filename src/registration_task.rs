@@ -5,6 +5,7 @@
 #![allow(unreachable_code)]
 #![allow(non_snake_case)]
 #![allow(clippy::too_many_arguments)]
+#![allow(non_local_definitions)]
 
 use crate::types::SeriesPath;
 use crate::AETitle;
