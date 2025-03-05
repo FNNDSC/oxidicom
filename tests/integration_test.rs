@@ -99,9 +99,11 @@ async fn test_missing_studydate_error_sent_to_nats() {
         .unwrap();
     let subject = format!("{root_subject}.>");
     let mut subscriber = nats.subscribe(subject).await.unwrap();
+    tracing::debug!("subscribed");
     let nats_subscriber_loop = tokio::spawn(async move {
         let mut messages = Vec::new();
         loop {
+            tracing::debug!("waiting for next message...");
             // Loop until no more messages received for a while.
             tokio::select! {
                 Some(v) = subscriber.next() => messages.push(v),
@@ -123,6 +125,7 @@ async fn test_missing_studydate_error_sent_to_nats() {
     // send one DICOM data for storage
     let dcm = create_dicom_without_studydate();
     let address = format!("127.0.0.1:{port}");
+    tracing::debug!("about to send DICOM");
     store_one_dicom(&address, dcm).await;
 
     // wait for server to shut down

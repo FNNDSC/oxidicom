@@ -138,13 +138,16 @@ async fn maybe_send_lonk_error(
     e: DicomRequiredTagError,
 ) {
     if let Some(client) = nats_client {
+        tracing::info!("before sending LONK");
         let payload = error_message(e.error.into());
-        send_lonk(&client, root_subject, &series, payload)
+        let r = send_lonk(&client, root_subject, &series, payload)
             .await
             .unwrap_or_else(|e| {
                 tracing::error!(error = e.to_string());
                 ()
-            })
+            });
+        tracing::info!("after sending LONK");
+        r
     }
 }
 

@@ -10,7 +10,7 @@ pub(crate) fn sleep_duration() -> Duration {
     if matches!(option_env!("CI"), Some("true")) {
         Duration::from_secs(10)
     } else {
-        Duration::from_millis(500)
+        Duration::from_millis(1500)
     }
 }
 
