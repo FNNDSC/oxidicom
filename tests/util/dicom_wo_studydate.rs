@@ -8,6 +8,7 @@ pub(crate) static SERIES: LazyLock<SeriesKey> = LazyLock::new(|| {
     SeriesKey::new(
         "2.25.281556350530040985498456895882693555497".to_string(),
         AETitle::from_static("OXITESTCALLING"),
+        ulid::Ulid::new()
     )
 });
 

@@ -7,6 +7,7 @@ use aliri_braid::braid;
 use celery::task::Signature;
 use time::macros::format_description;
 use tokio::task::JoinHandle;
+use ulid::Ulid;
 
 /// Path in storage to a DICOM instance file.
 #[braid(serde)]
@@ -103,7 +104,7 @@ impl DicomInfo<SeriesPath> {
 pub(crate) type PendingDicomInstance =
     SeriesEvent<JoinHandle<Result<(), DicomStorageError>>, DicomInfo<SeriesPath>>;
 
-/// The set of metadata which uniquely identifies a DICOM series in *CUBE*.
+/// The set of metadata which uniquely identifies a DICOM series in *CUBE* per DICOM association.
 ///
 /// https://github.com/FNNDSC/ChRIS_ultron_backEnd/blob/v6.1.0/chris_backend/pacsfiles/models.py#L60
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -113,13 +114,16 @@ pub struct SeriesKey {
     pub SeriesInstanceUID: String,
     /// AE title of PACS the series was received from
     pub pacs_name: AETitle,
+    /// The DICOM association ULID.
+    pub association: Ulid
 }
 
 impl SeriesKey {
-    pub fn new(series_instance_uid: String, pacs_name: AETitle) -> Self {
+    pub fn new(series_instance_uid: String, pacs_name: AETitle, association: Ulid) -> Self {
         Self {
             SeriesInstanceUID: series_instance_uid,
             pacs_name,
+            association
         }
     }
 }

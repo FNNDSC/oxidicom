@@ -106,6 +106,7 @@ fn match_event(
                             .get(&ulid)
                             .map(|a| a.pacs_name.clone())
                             .unwrap_or_else(|| AETitle::from_static("UNKNOWN")),
+                        ulid.clone()
                     );
                     tracing::error!(
                         association_ulid = ulid.to_string(),
@@ -168,6 +169,7 @@ fn receive_dicom_instance(
     let series_key = SeriesKey::new(
         pacs_file.data.SeriesInstanceUID.clone(),
         pacs_file.data.pacs_name.clone(),
+        ulid
     );
     association
         .series
