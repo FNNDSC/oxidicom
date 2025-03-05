@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it as below.
+title: High-performance DICOM Receiver for ChRIS
+version: 2.0.0
+date-released: 2024-06-03
+repository-code: https://github.com/FNNDSC/oxidicom
+license: MIT
+type: software
+authors:
+- family-names: Zhang
+  given-names: Jennings
+  orcid: https://orcid.org/0000-0001-6473-3316
+- family-names: Pienaar
+  given-names: Rudolph
+  orcid: https://orcid.org/0000-0002-8684-3185
+keywords:
+- ChRIS
+- medical imaging
+- DICOM
+- PACS
+- Rust
+abstract: |
+  oxidicom is a high-performance DICOM receiver for the ChRIS backend (CUBE).
+  More technically, oxidicom implements a DICOM C-STORE service class provider
+  (SCP), a "server," which listens for incoming DICOM files. For every DICOM
+  file received, it writes it to the storage of CUBE and "registers" the file
+  with CUBE. As Rust-based software, it is easily achieves a typical throughput
+  of thousands of files processed per second on a single CPU core.
+references:
+- type: software
+  title: "ChRIS Backend"
+  url: "https://github.com/FNNDSC/ChRIS_ultron_backEnd"
