@@ -8,7 +8,7 @@ pub(crate) static SERIES: LazyLock<SeriesKey> = LazyLock::new(|| {
     SeriesKey::new(
         "2.25.281556350530040985498456895882693555497".to_string(),
         AETitle::from_static("OXITESTCALLING"),
-        ulid::Ulid::new()
+        ulid::Ulid::new(),
     )
 });
 
@@ -24,7 +24,11 @@ pub(crate) fn create_dicom_without_studydate() -> InMemDicomObject {
             VR::UI,
             "2.25.127942697262855382468303288367206048762",
         ),
-        DataElement::new(tags::SERIES_INSTANCE_UID, VR::UI, SERIES.SeriesInstanceUID.as_str()),
+        DataElement::new(
+            tags::SERIES_INSTANCE_UID,
+            VR::UI,
+            SERIES.SeriesInstanceUID.as_str(),
+        ),
         DataElement::new(
             tags::SOP_INSTANCE_UID,
             VR::UI,

@@ -100,7 +100,7 @@ pub fn assert_lonk_messages(messages: Vec<async_nats::Message>) {
         let series_key = SeriesKey {
             SeriesInstanceUID: series.SeriesInstanceUID.to_string(),
             pacs_name: AETitle::from(series.pacs_name.as_str()),
-            association: ulid::Ulid::new()
+            association: ulid::Ulid::new(),
         };
         let subject = oxidicom::lonk::subject_of(&ROOT_SUBJECT, &series_key);
         let messages_of_series: Vec<_> = messages

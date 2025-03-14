@@ -142,5 +142,8 @@ async fn test_missing_studydate_error_sent_to_nats() {
         messages_iter.next().is_none(),
         "Should have only received 1 message from NATS, but received at least 2."
     );
-    assert_eq!(message.subject.as_str(), subject_of(root_subject, &SERIES).as_str());
+    assert_eq!(
+        message.subject.as_str(),
+        subject_of(root_subject, &SERIES).as_str()
+    );
 }

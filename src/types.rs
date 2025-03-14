@@ -115,7 +115,7 @@ pub struct SeriesKey {
     /// AE title of PACS the series was received from
     pub pacs_name: AETitle,
     /// The DICOM association ULID.
-    pub association: Ulid
+    pub association: Ulid,
 }
 
 impl SeriesKey {
@@ -123,7 +123,7 @@ impl SeriesKey {
         Self {
             SeriesInstanceUID: series_instance_uid,
             pacs_name,
-            association
+            association,
         }
     }
 }
