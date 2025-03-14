@@ -2,16 +2,15 @@
 
 use figment::providers::Env;
 use figment::Figment;
-use opentelemetry::trace::TraceError;
-use opentelemetry_sdk::trace::TracerProvider;
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use std::sync::LazyLock;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     init_tracing_subscriber()?;
-    init_otel_tracing()?;
+    let provider = init_tracer_provider()?;
     let result = run_everything_from_env(None).await;
-    opentelemetry::global::shutdown_tracer_provider();
+    provider.shutdown()?;
     result
 }
 
@@ -26,11 +25,16 @@ pub async fn run_everything_from_env(finite_connections: Option<usize>) -> anyho
     oxidicom::run_everything(settings, finite_connections, Some(on_start)).await
 }
 
-fn init_otel_tracing() -> Result<TracerProvider, TraceError> {
-    opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(opentelemetry_otlp::new_exporter().tonic())
-        .install_batch(opentelemetry_sdk::runtime::Tokio)
+fn init_tracer_provider() -> Result<SdkTracerProvider, opentelemetry::trace::TraceError> {
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .build()?;
+    let resource = opentelemetry_sdk::Resource::builder().build();
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(resource)
+        .build();
+    Ok(provider)
 }
 
 fn init_tracing_subscriber() -> Result<(), tracing::dispatcher::SetGlobalDefaultError> {
