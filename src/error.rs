@@ -11,6 +11,9 @@ pub enum DicomStorageError {
 
     #[error(transparent)]
     Write(#[from] dicom::object::WriteError),
+
+    #[error(transparent)]
+    RequiredTag(#[from] RequiredTagError),
 }
 
 #[derive(thiserror::Error, Debug)]

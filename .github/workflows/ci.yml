@@ -1,5 +1,3 @@
-# On push: build latest images
-
 name: CI
 
 on:
@@ -11,104 +9,173 @@ on:
       - '.github/**'
       - '**.rs'
       - 'Cargo.*'
-      - 'justfile'
-      - 'Dockerfile'
       - 'docker-compose.yml'
-      - 'run.sh'
   pull_request:
     branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v4
-    - uses: FNNDSC/miniChRIS-docker@master
-    - uses: taiki-e/install-action@v2
-      with:
-        tool: just
-    - name: Start Orthanc
-      run: docker compose up -d orthanc
+    - name: Start services
+      run: docker compose up -d
     - name: Download example data
-      run: docker compose up get-data
-    - name: Compile test binary
-      run: just test --no-run
-    - name: Integration test
-      run: just test
-  build:
-    name: Build
-    runs-on: ubuntu-22.04
+      run: docker compose run --rm get-data
+    - name: Cache rust build
+      uses: Swatinem/rust-cache@v2
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    - name: Run tests
+      env:
+        RUST_LOG: oxidicom=debug,integration_test=debug
+      run: cargo llvm-cov test --locked --codecov --output-path codecov.json
+    - name: Print service logs
+      if: failure()
+      run: docker compose logs
+    - name: Upload coverage to Codecov
+      if: always()
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: codecov.json
+        fail_ci_if_error: true
+  build-rust:
+    name: Build Rust binary
+    runs-on: ubuntu-24.04
+    needs: [ test ]
+    strategy:
+      matrix:
+        target:
+        - aarch64-unknown-linux-musl
+        - x86_64-unknown-linux-musl
     steps:
-      - name: Decide image tags
-        id: info
-        shell: python
-        run: |
-          import os
-          import itertools
-          
-          def join_tag(t):
-            registry, repo, tag = t
-            return f'{registry}/{repo}:{tag}'.lower()
-          
-          registries = ['docker.io', 'ghcr.io']
-          repos = ['${{ github.repository }}'.lower()]
-          if '${{ github.ref_type }}' == 'branch':
-              tags = ['latest']
-          elif '${{ github.ref_type }}' == 'tag':
-              tag = '${{ github.ref_name }}'
-              version = tag[1:] if tag.startswith('v') else tag
-              tags = ['latest', version]
-          else:
-              tags = []
+    - uses: actions/checkout@v4
+    - name: Cache rust build
+      uses: Swatinem/rust-cache@v2
+    - name: Build
+      uses: houseabsolute/actions-rust-cross@f7da4010930154943c99d13df0151dece91a924f  # v1.0.4
+      with:
+        target: ${{ matrix.target }}
+        command: build
+        args: --release --locked
+    - name: Move binary
+      run: |
+        mkdir dist
+        mv target/${{ matrix.target }}/release/oxidicom dist/oxidicom
+    - name: Calculate checksum
+      run: |
+        cd dist
+        sha256 oxidicom | tee oxidicom.sha256sum
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: 'build__${{ matrix.target }}'
+        path: dist
+        if-no-files-found: 'error'
+  build-docker:
+    name: Build container image
+    runs-on: ubuntu-24.04
+    needs: [ build-rust ]
+    steps:
+    - name: Download x86_64 binary
+      uses: actions/download-artifact@v4
+    - name: Print out all files
+      run: find -type f
+    - name: Print expected checksums
+      run: find -type f -name '*.sha256sum' -exec sh -c 'echo {} && cat {}' \;
+    - name: Calculate actual checksums
+      run: find -type f -name 'oxidicom' -exec sha256sum '{}' \;
+    - name: Move binaries and mark executable
+      run: |
+        mkdir -vp dist/linux/amd64 dist/linux/arm64
+        mv -v build__x86_64-unknown-linux-musl/oxidicom dist/linux/amd64/oxidicom
+        mv -v build__aarch64-unknown-linux-musl/oxidicom dist/linux/arm64/oxidicom
+        chmod -v 555 dist/linux/{amd64,arm64}/oxidicom
+    - name: Create Dockerfile
+      run: |
+        cat > Dockerfile << EOF
+        # syntax=docker/dockerfile:1
+        FROM scratch
+        ARG TARGETPLATFORM
+        COPY ./dist/\$TARGETPLATFORM/oxidicom /oxidicom
+        CMD ["/oxidicom"]
+        EOF
+    - uses: docker/metadata-action@v5
+      id: meta
+      with:
+        images: |
+          docker.io/fnndsc/oxidicom
+          ghcr.io/fnndsc/oxidicom
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest,enable={{is_default_branch}}
+    - uses: docker/setup-qemu-action@v3
+    - uses: docker/setup-buildx-action@v3
+    - name: Login to DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_PASSWORD }}
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build and push
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: true
+        file: ./Dockerfile
+        platforms: linux/amd64,linux/arm64
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
-          product = itertools.product(registries, repos, tags)
-          tags_csv = ','.join(map(join_tag, product))
-          outputs = {
-              'tags_csv' : tags_csv,
-          }
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
-              for k, v in outputs.items():
-                  out.write(f'{k}={v}\n')
-      - uses: FNNDSC/miniChRIS-docker@master  # need to run CUBE for sqlx to do compile-time validation of SQL queries
-      - uses: docker/setup-buildx-action@v3
-        with:
-          # builder needs to be able to see the Postgres database running in the minichris-local network,
-          # so that the sqlx crate can do compile-time verification of SQL commands.
-          driver-opts: network=minichris-local
-      - name: Login to DockerHub
-        if: github.event_name == 'push' || github.event_name == 'release'
-        id: dockerhub_login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-      - name: Login to GitHub Container Registry
-        if: github.event_name == 'push' || github.event_name == 'release'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Get database IP
-        id: read-network
-        # sqlx crate needs the environment variable DATABASE_URL to be set for compile-time validation of SQL commands.
-        # For unknown reasons, docker container service name DNS doesn't work inside the build, so we need to get the
-        # database container's IP address.
+  # Re-reun tests many times to detect race conditions.
+  # https://github.com/FNNDSC/oxidicom/issues/4
+  retest:
+    name: Rerun tests many times
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start services
+        run: docker compose up -d
+      - name: Download example data
+        run: docker compose run --rm get-data
+      - name: Cache rust build
+        uses: Swatinem/rust-cache@v2
+      - name: Compile test binary
+        run: cargo test --no-run --locked
+      - name: Run tests
+        env:
+          RUST_LOG: oxidicom::notifier=trace,oxidicom::limiter=trace,integration_test=trace
         run: |
-          db_container_name=$(docker ps -f 'label=com.docker.compose.service=db' --format '{{ .Names }}')
-          ip_address_with_subnet=$(docker network inspect minichris-local --format "{{ range .Containers }}{{ if (eq .Name \"$db_container_name\") }}{{ .IPv4Address }}{{ end }}{{ end }}")
-          ip_address="${ip_address_with_subnet%/*}"
-          database_url="postgresql://chris:chris1234@$ip_address:5432/chris"
-          echo "db_container_name=$db_container_name ip_address=$ip_address database_url=$database_url"
-          docker run --rm --network minichris-local docker.io/library/postgres:16 psql "$database_url" -c 'SELECT 1 + 1'
-          echo "DATABASE_URL=$database_url" >> "$GITHUB_OUTPUT"
-      - name: Build image
-        uses: docker/build-push-action@v5
-        id: docker_build
-        with:
-          tags: ${{ steps.info.outputs.tags_csv }}
-          push: ${{ steps.dockerhub_login.outcome == 'success' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: DATABASE_URL=${{ steps.read-network.outputs.DATABASE_URL }}
+          set +e
+          failed_count=0
+          mkdir logs
+          for i in {1..20}; do
+            cargo test > log
+            rc=$?
+            echo "Attempt #$i --> $rc"
+            if [ "$rc" != '0' ]; then
+              ((failed_count++))
+              mv log logs/$(date +%s).log
+            fi
+          done
+
+          if [ "$failed_count" != 0 ]; then
+            cat logs/*.log
+            echo "::error ::$failed_count out of 20 attempts failed."
+            exit 1
+          fi

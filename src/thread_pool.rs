@@ -1,5 +1,5 @@
 //! Thread pool implementation from The Book.
-//! https://doc.rust-lang.org/book/ch20-02-multithreaded.html
+//! <https://doc.rust-lang.org/book/ch20-02-multithreaded.html>
 
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;

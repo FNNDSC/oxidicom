@@ -1,9 +1,8 @@
 //! Handles incoming request to store a DICOM file.
 //!
 //! File mostly copied from dicom-rs.
-//! https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs
+//! <https://github.com/Enet4/dicom-rs/blob/dbd41ed3a0d1536747c6b8ea2b286e4c6e8ccc8a/storescp/src/main.rs>
 
-use std::collections::HashMap;
 use std::net::TcpStream;
 
 use dicom::core::{DataElement, VR};
@@ -21,8 +20,8 @@ use tokio::sync::mpsc::UnboundedSender;
 use ulid::Ulid;
 
 use crate::association_error::{AssociationError, AssociationError::*};
-use crate::dicomrs_settings::{ClientAETitle, OurAETitle};
 use crate::enums::AssociationEvent;
+use crate::AETitle;
 
 /// Handle an "association" from an "SCU" (i.e. handle when someone is trying to give us DICOM files).
 ///
@@ -35,22 +34,17 @@ pub fn handle_association(
     max_pdu_length: usize,
     channel: &UnboundedSender<AssociationEvent>,
     ulid: Ulid,
-    aet: &OurAETitle,
-    pacs_addresses: &HashMap<ClientAETitle, String>,
 ) -> Result<(), AssociationError> {
     let mut association = options.establish(scu_stream).map_err(CouldNotEstablish)?;
     let context = opentelemetry::Context::current();
-    let aec = ClientAETitle::from(association.client_ae_title());
-    let pacs_address = pacs_addresses.get(&aec).map(|s| s.to_string());
+    let aec = AETitle::from(association.client_ae_title());
     context
         .span()
         .set_attribute(KeyValue::new("aet", aec.to_string()));
     channel
         .send(AssociationEvent::Start {
             ulid,
-            aet: aet.clone(),
             aec: aec.clone(),
-            pacs_address,
         })
         .unwrap();
 

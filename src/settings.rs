@@ -1,41 +1,36 @@
 //! Oxidicom settings, which are configurable using environment variables.
-use crate::dicomrs_settings::ClientAETitle;
 use crate::DicomRsSettings;
 use camino::Utf8PathBuf;
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::num::NonZeroUsize;
 
 #[derive(Debug, Deserialize)]
 pub struct OxidicomEnvOptions {
-    pub db: DatabaseOptions,
+    pub amqp_address: String,
     pub files_root: Utf8PathBuf,
+    #[serde(default = "default_queue_name")]
+    pub queue_name: String,
+    pub nats_address: Option<String>,
+    #[serde(with = "humantime_serde", default = "default_progress_interval")]
+    pub progress_interval: std::time::Duration,
     pub scp: DicomRsSettings,
-    #[serde(default)]
+    #[serde(default = "default_max_pdu_length")]
     pub scp_max_pdu_length: usize,
-    #[serde(default)]
-    pub pacs_address: HashMap<ClientAETitle, String>,
     #[serde(default = "default_listener_threads")]
     pub listener_threads: NonZeroUsize,
     #[serde(default = "default_listener_port")]
     pub listener_port: u16,
+    #[serde(with = "humantime_serde", default)]
+    pub dev_sleep: Option<std::time::Duration>,
+    #[serde(default = "default_root_subject")]
+    pub root_subject: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct DatabaseOptions {
-    pub connection: String,
-    #[serde(default = "default_pool_size")]
-    pub pool: NonZeroU32,
-    #[serde(default = "default_batch_size")]
-    pub batch_size: NonZeroUsize,
-}
-
-fn default_pool_size() -> NonZeroU32 {
-    NonZeroU32::new(10).unwrap()
-}
-
-fn default_batch_size() -> NonZeroUsize {
-    NonZeroUsize::new(20).unwrap()
+/// The name of the queue used by the `register_pacs_series` celery task in *CUBE*'s code.
+///
+/// https://github.com/FNNDSC/ChRIS_ultron_backEnd/blob/b3cb0afa068b2cfb5a89eea22ff9b41437dc6f2a/chris_backend/core/celery.py#L36
+fn default_queue_name() -> String {
+    "main2".to_string()
 }
 
 fn default_listener_threads() -> NonZeroUsize {
@@ -44,4 +39,16 @@ fn default_listener_threads() -> NonZeroUsize {
 
 fn default_listener_port() -> u16 {
     11111
+}
+
+fn default_progress_interval() -> std::time::Duration {
+    std::time::Duration::from_millis(500)
+}
+
+fn default_max_pdu_length() -> usize {
+    16384
+}
+
+fn default_root_subject() -> String {
+    "oxidicom".to_string()
 }
