@@ -10,6 +10,50 @@ pub const MESSAGE_NDICOM: u8 = 0x01;
 pub const MESSAGE_ERROR: u8 = 0x02;
 pub const DONE_MESSAGE: [u8; 1] = [0x00];
 
+pub struct Lonk {
+    pub series: SeriesKey,
+    pub message: LonkMessage,
+}
+
+impl Lonk {
+    pub fn done(series: SeriesKey) -> Self {
+        Self {
+            series,
+            message: LonkMessage::Done,
+        }
+    }
+
+    pub fn ndicom(series: SeriesKey, ndicom: u32) -> Self {
+        Self {
+            series,
+            message: LonkMessage::Ndicom(ndicom),
+        }
+    }
+
+    pub fn error(series: SeriesKey, error: DicomStorageError) -> Self {
+        Self {
+            series,
+            message: LonkMessage::Error(error),
+        }
+    }
+}
+
+pub enum LonkMessage {
+    Done,
+    Ndicom(u32),
+    Error(DicomStorageError),
+}
+
+impl LonkMessage {
+    pub fn into_bytes(self) -> Bytes {
+        match self {
+            Self::Done => done_message(),
+            Self::Ndicom(ndicom) => progress_message(ndicom),
+            Self::Error(error) => error_message(error),
+        }
+    }
+}
+
 pub fn done_message() -> Bytes {
     Bytes::from_static(&DONE_MESSAGE)
 }
@@ -46,23 +90,4 @@ pub fn subject_of(root_subject: impl std::fmt::Display, series: &SeriesKey) -> S
 /// https://docs.nats.io/nats-concepts/subjects#characters-allowed-and-recommended-for-subject-names
 fn sanitize_subject_part(name: &str) -> String {
     name.replace(&[' ', '.', '*', '>'], "_").replace('\0', "")
-}
-
-pub(crate) async fn send_lonk(
-    client: &async_nats::Client,
-    root_subject: impl std::fmt::Display,
-    series: &SeriesKey,
-    payload: Bytes,
-) -> Result<(), async_nats::PublishError> {
-    tracing::debug!(
-        SeriesInstanceUID = &series.SeriesInstanceUID,
-        pacs_name = series.pacs_name.as_str(),
-        payload = payload
-            .iter()
-            .map(|b| format!("{b:#04x}"))
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
-    let subject = subject_of(root_subject, series);
-    client.publish(subject, payload).await
 }

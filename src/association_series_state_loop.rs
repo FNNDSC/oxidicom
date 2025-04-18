@@ -1,13 +1,15 @@
+use crate::channel_helpers::{send_error_left, send_error_right};
 use crate::enums::{AssociationEvent, SeriesEvent};
-use crate::error::{DicomRequiredTagError, DicomStorageError, HandleLoopError};
-use crate::lonk::{error_message, send_lonk};
+use crate::error::{DicomRequiredTagError, DicomStorageError};
+use crate::lonk::Lonk;
+use crate::lonk_publisher::PublishLonkParams;
 use crate::pacs_file::{BadTag, PacsFileRegistration};
 use crate::types::{DicomFilePath, DicomInfo, PendingDicomInstance, SeriesKey, SeriesPath};
 use crate::AETitle;
 use camino::{Utf8Path, Utf8PathBuf};
 use dicom::object::DefaultDicomObject;
+use either::Either;
 use std::collections::HashMap;
-use std::fmt::Display;
 use std::sync::Arc;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -34,44 +36,32 @@ type InflightAssociations = HashMap<Ulid, Association>;
 ///
 /// - On every DICOM instance received, read its metadata (such as PatientName, Modality, ...),
 ///   and create a (tokio) task in which the data is written to storage as a DICOM file.
+/// - In case a DICOM is missing required tags, emit a LONK error about it.
 /// - At the end of every association, send a [SeriesEvent::Finish] for each series we saw
 ///   during the association.
 pub(crate) async fn association_series_state_loop(
     mut receiver: UnboundedReceiver<AssociationEvent>,
     sender: UnboundedSender<(SeriesKey, PendingDicomInstance)>,
     files_root: Utf8PathBuf,
-    nats_client: Option<async_nats::Client>,
-    root_subject: &str,
-) -> Result<Result<(), HandleLoopError>, SendError<(SeriesKey, PendingDicomInstance)>> {
+    tx_lonk: &UnboundedSender<PublishLonkParams>,
+) -> Result<(), SendError<Either<(SeriesKey, PendingDicomInstance), PublishLonkParams>>> {
     let mut inflight_associations: InflightAssociations = Default::default();
-    let mut everything_ok = true;
     let files_root = Arc::new(files_root);
     while let Some(event) = receiver.recv().await {
-        match match_event(
-            event,
-            &mut inflight_associations,
-            &files_root,
-            &nats_client,
-            root_subject,
-        ) {
+        match match_event(event, &mut inflight_associations, &files_root) {
             Ok(messages) => {
                 for message in messages {
-                    sender.send(message)?
+                    sender.send(message).map_err(send_error_left)?;
                 }
             }
-            Err(_) => {
-                everything_ok = false;
+            Err(e) => {
+                tx_lonk
+                    .send(PublishLonkParams::required(e))
+                    .map_err(send_error_right)?;
             }
         }
     }
-    let result = if everything_ok {
-        Ok(())
-    } else {
-        Err(HandleLoopError(
-            "There was an error processing DICOM objects.",
-        ))
-    };
-    Ok(result)
+    Ok(())
 }
 
 /// Helper function which handles most of what [association_series_state_loop] is supposed to do.
@@ -83,9 +73,7 @@ fn match_event(
     event: AssociationEvent,
     inflight_associations: &mut InflightAssociations,
     files_root: &Arc<Utf8PathBuf>,
-    nats_client: &Option<async_nats::Client>,
-    root_subject: &str,
-) -> Result<Vec<(SeriesKey, PendingDicomInstance)>, ()> {
+) -> Result<Vec<(SeriesKey, PendingDicomInstance)>, Lonk> {
     match event {
         AssociationEvent::Start { ulid, aec } => {
             inflight_associations.insert(ulid, Association::new(aec));
@@ -114,10 +102,7 @@ fn match_event(
                         pacs_name = series.pacs_name.as_str(),
                         message = e.to_string()
                     );
-                    let nats_client = nats_client.clone();
-                    let root_subject = root_subject.to_string();
-                    tokio::spawn(maybe_send_lonk_error(nats_client, root_subject, series, e));
-                    Err(())
+                    Err(Lonk::error(series, e.error.into()))
                 }
             }
         }
@@ -127,27 +112,6 @@ fn match_event(
                 .expect("Unknown association ULID");
             Ok(finish_association(association.series))
         }
-    }
-}
-
-/// Send an error message in LONK encoding to NATS. If transmission fails, whatever.
-async fn maybe_send_lonk_error(
-    nats_client: Option<async_nats::Client>,
-    root_subject: impl Display,
-    series: SeriesKey,
-    e: DicomRequiredTagError,
-) {
-    if let Some(client) = nats_client {
-        tracing::info!("before sending LONK");
-        let payload = error_message(e.error.into());
-        let r = send_lonk(&client, root_subject, &series, payload)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!(error = e.to_string());
-                ()
-            });
-        tracing::info!("after sending LONK");
-        r
     }
 }
 

@@ -94,7 +94,7 @@ fn enqueue_and_insert<
     }
 }
 
-/// Wait on all the tasks, then send [None] to `sender`.
+/// Wait on all the tasks, then send [SeriesEvent::Finish] to `sender`.
 async fn wait_on_all_then_flush<E: ToString, K, T, F>(
     tasks: Vec<JoinHandle<Result<(), E>>>,
     sender: &UnboundedSender<(K, SeriesEvent<T, F>)>,

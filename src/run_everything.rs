@@ -2,11 +2,13 @@ use crate::association_series_state_loop::association_series_state_loop;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use tokio::sync::mpsc;
 
+use crate::celery_publisher::celery_publisher;
 use crate::listener_tcp_loop::dicom_listener_tcp_loop;
-use crate::notifier::cube_pacsfile_notifier;
+use crate::lonk_publisher::lonk_publisher;
+use crate::messenger::messenger;
 use crate::series_synchronizer::series_synchronizer;
 use crate::settings::OxidicomEnvOptions;
-use futures::FutureExt;
+use futures::TryFutureExt;
 
 /// Runs everything in parallel:
 ///
@@ -48,6 +50,8 @@ where
     let (tx_association, rx_association) = mpsc::unbounded_channel();
     let (tx_storetasks, rx_storetasks) = mpsc::unbounded_channel();
     let (tx_register, rx_register) = mpsc::unbounded_channel();
+    let (tx_lonk, rx_lonk) = mpsc::unbounded_channel();
+    let (tx_celery, rx_celery) = mpsc::unbounded_channel();
     let listener_handle = tokio::task::spawn_blocking(move || {
         dicom_listener_tcp_loop(
             SocketAddrV4::new(Ipv4Addr::from(0), listener_port),
@@ -59,25 +63,36 @@ where
             on_start,
         )
     });
+    let celery_handle = tokio::spawn(async move {
+        celery_publisher(rx_celery, &celery).await?;
+        celery.close().await?;
+        anyhow::Ok(())
+    });
+    let nats_handle = if let Some(client) = nats_client {
+        tokio::spawn(async move {
+            lonk_publisher(root_subject, &client, rx_lonk, progress_interval, dev_sleep).await?;
+            client.flush().await?;
+            client.drain().await?;
+            anyhow::Ok(())
+        })
+    } else {
+        tokio::spawn(async move {
+            let mut rx = rx_lonk;
+            while let Some(_) = rx.recv().await {}
+            anyhow::Ok(())
+        })
+    };
 
-    tokio::try_join!(
-        association_series_state_loop(
-            rx_association,
-            tx_storetasks,
-            files_root,
-            nats_client.clone(),
-            &root_subject
-        )
-        .map(|r| r.unwrap()),
-        series_synchronizer(rx_storetasks, tx_register),
-        cube_pacsfile_notifier(
-            rx_register,
-            celery,
-            nats_client,
-            &root_subject,
-            progress_interval,
-            dev_sleep
-        )
-    )?;
-    listener_handle.await?
+    let result = tokio::try_join!(
+        association_series_state_loop(rx_association, tx_storetasks, files_root, &tx_lonk)
+            .map_err(anyhow::Error::from),
+        series_synchronizer(rx_storetasks, tx_register).map_err(anyhow::Error::from),
+        messenger(rx_register, &tx_lonk, &tx_celery).map_err(anyhow::Error::from)
+    );
+    listener_handle.await??;
+    drop(tx_lonk);
+    drop(tx_celery);
+    celery_handle.await??;
+    nats_handle.await??;
+    result.map(|_| ())
 }

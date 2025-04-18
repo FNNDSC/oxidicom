@@ -129,8 +129,7 @@ async fn test_missing_studydate_error_sent_to_nats() {
     store_one_dicom(&address, dcm).await;
 
     // wait for server to shut down
-    let result = server_handle.await.unwrap();
-    assert!(result.is_err());
+    server_handle.await.unwrap().unwrap();
 
     // get messages from NATS
     let lonk_messages = nats_subscriber_loop.await.unwrap();
