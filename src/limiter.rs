@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// Something that can be used as a subject key (stringly-typed).
-pub(crate) trait Subject: Eq + Hash + Clone + AsRef<str> {}
-impl<T: Eq + Hash + Clone + AsRef<str>> Subject for T {}
+pub(crate) trait Subject: Eq + Hash + Clone + AsRef<str> + Debug {}
+impl<T: Eq + Hash + Clone + AsRef<str> + Debug> Subject for T {}
 
 /// A synchronization and rate-limiting mechanism.
 pub(crate) struct SubjectLimiter<S: Subject>(KindaPureSubjectLimiter<S>);
@@ -158,6 +158,9 @@ impl<S: Subject> KindaPureSubjectLimiter<S> {
                 }
             }
         } else {
+            #[cfg(debug_assertions)]
+            panic!("SubjectLimiter::forget called on unknown subject: {subject:?}");
+            #[cfg(not(debug_assertions))]
             tracing::warn!(
                 subject = subject.as_ref(),
                 "SubjectLimiter::forget called on unknown subject"

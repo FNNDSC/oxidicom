@@ -56,7 +56,11 @@ fn create_messages_for(
             let ndicom = counts.remove(&series_key).unwrap_or(0);
             let lonks = vec![
                 PublishLonkParams::required(Lonk::ndicom(series_key.clone(), ndicom)),
-                PublishLonkParams::last(Lonk::done(series_key)),
+                if ndicom > 1 {
+                    PublishLonkParams::last(Lonk::done(series_key))
+                } else {
+                    PublishLonkParams::only(Lonk::done(series_key))
+                },
             ];
             (lonks, Some((series_info, ndicom)))
         }
