@@ -5,9 +5,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-/// Something that can be used as a subject key.
-pub(crate) trait Subject: Eq + Hash + Clone + Debug {}
-impl<T: Eq + Hash + Clone + Debug> Subject for T {}
+/// Something that can be used as a subject key (stringly-typed).
+pub(crate) trait Subject: Eq + Hash + Clone + AsRef<str> {}
+impl<T: Eq + Hash + Clone + AsRef<str>> Subject for T {}
 
 /// A synchronization and rate-limiting mechanism.
 pub(crate) struct SubjectLimiter<S: Subject>(KindaPureSubjectLimiter<S>);
@@ -86,7 +86,7 @@ impl<S: Subject> Drop for Permit<S> {
         if let Some(state) = subjects.get_mut(&self.subject) {
             state.last_sent = Instant::now(); // impure
         }
-        tracing::trace!("permit dropped");
+        tracing::trace!(subject = self.subject.as_ref(), "permit dropped");
     }
 }
 
@@ -104,10 +104,10 @@ impl<S: Subject> KindaPureSubjectLimiter<S> {
         let state = subjects
             .entry(subject.clone())
             .and_modify(|_| {
-                tracing::trace!(subject = format!("{:?}", &subject), "old subject");
+                tracing::trace!(subject = subject.as_ref(), "old subject");
             })
             .or_insert_with(|| {
-                tracing::debug!(subject = format!("{:?}", &subject), "new subject");
+                tracing::debug!(subject = subject.as_ref(), "new subject");
                 SubjectState::new(self.start)
             });
         if now - state.last_sent < self.interval {
@@ -136,11 +136,11 @@ impl<S: Subject> KindaPureSubjectLimiter<S> {
         if let Some(semaphore) = acquire {
             if semaphore.available_permits() == 0 {
                 tracing::trace!(
-                    subject = format!("{subject:?}"),
+                    subject = subject.as_ref(),
                     "lock is held, we will have to wait for it."
                 );
             } else {
-                tracing::trace!(subject = format!("{subject:?}"), "lock is not held");
+                tracing::trace!(subject = subject.as_ref(), "lock is not held");
             }
             match semaphore.acquire_owned().await {
                 Ok(_owned_permit) => {
@@ -148,18 +148,18 @@ impl<S: Subject> KindaPureSubjectLimiter<S> {
                     if let Some(state) = subjects.remove(subject) {
                         state.semaphore.close();
                     }
-                    tracing::debug!(subject = format!("{subject:?}"), "forgotten");
+                    tracing::debug!(subject = subject.as_ref(), "forgotten");
                 }
                 Err(_) => {
                     tracing::warn!(
-                        subject = format!("{subject:?}"),
+                        subject = subject.as_ref(),
                         "SubjectLimiter::forget called twice"
                     );
                 }
             }
         } else {
             tracing::warn!(
-                subject = format!("{subject:?}"),
+                subject = subject.as_ref(),
                 "SubjectLimiter::forget called on unknown subject"
             );
         }
