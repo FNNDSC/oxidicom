@@ -4,11 +4,11 @@ services:
     ports:
       - "5672:5672"
   nats:
-    image: docker.io/library/nats:2.10.25
+    image: docker.io/library/nats:2.12.0
     ports:
       - "4222:4222"
   orthanc:
-    image: docker.io/jodogne/orthanc:1.12.6
+    image: docker.io/jodogne/orthanc:1.12.9
     volumes:
       - ./orthanc.json:/etc/orthanc/orthanc.json:ro
       - orthanc:/var/lib/orthanc/db

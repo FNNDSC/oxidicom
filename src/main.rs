@@ -25,7 +25,7 @@ pub async fn run_everything_from_env(finite_connections: Option<usize>) -> anyho
     oxidicom::run_everything(settings, finite_connections, Some(on_start)).await
 }
 
-fn init_tracer_provider() -> Result<SdkTracerProvider, opentelemetry::trace::TraceError> {
+fn init_tracer_provider() -> Result<SdkTracerProvider, opentelemetry_otlp::ExporterBuildError> {
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .build()?;
