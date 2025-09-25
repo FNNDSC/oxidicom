@@ -25,7 +25,10 @@ pub(crate) async fn lonk_publisher(
         if matches!(priority, LonkPriority::Last) {
             limiter.forget(&subject).await;
         }
-        if matches!(priority, LonkPriority::Required | LonkPriority::Last) {
+        if matches!(
+            priority,
+            LonkPriority::Required | LonkPriority::Last | LonkPriority::Only
+        ) {
             send_lonk(subject, lonk, client).await?;
         } else {
             limited_send_lonk(subject, lonk, client, &limiter).await?;
@@ -106,6 +109,12 @@ impl PublishLonkParams {
             priority: LonkPriority::Last,
         }
     }
+    pub fn only(lonk: Lonk) -> Self {
+        Self {
+            lonk,
+            priority: LonkPriority::Only,
+        }
+    }
 }
 
 /// Priority level of a LONK message.
@@ -117,4 +126,6 @@ pub(crate) enum LonkPriority {
     Required,
     /// A LONK message which _must_ be published, and is the last message of its DICOM series.
     Last,
+    /// Special case of [`LonkPriority::Last`] to use when `ndicom = 1`.
+    Only,
 }

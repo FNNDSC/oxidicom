@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: If you use this software, please cite it as below.
 title: High-performance DICOM Receiver for ChRIS
-version: 2.0.0
-date-released: 2024-06-03
+version: 3.1.0
+date-released: 2025-09-23
 repository-code: https://github.com/FNNDSC/oxidicom
 license: MIT
 type: software
