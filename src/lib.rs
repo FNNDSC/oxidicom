@@ -1,7 +1,7 @@
 mod association_error;
 mod association_series_state_loop;
-mod celery_publisher;
 mod channel_helpers;
+pub mod cube_publisher;
 mod dicomrs_settings;
 mod enums;
 mod error;
@@ -13,7 +13,6 @@ mod messenger;
 mod pacs_file;
 mod patient_age;
 mod private_sop_uids;
-mod registration_task;
 mod run_everything;
 mod sanitize;
 mod scp;
@@ -21,10 +20,9 @@ mod series_synchronizer;
 mod settings;
 mod thread_pool;
 mod transfer;
-mod types;
+pub mod types;
 
 pub use dicomrs_settings::DicomRsSettings;
-pub use registration_task::register_pacs_series;
 pub use run_everything::run_everything;
 pub use settings::OxidicomEnvOptions;
 pub use types::{AETitle, AETitleRef, SeriesKey};

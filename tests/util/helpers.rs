@@ -27,14 +27,11 @@ pub(crate) fn init_logging() {
 
 pub(crate) fn create_test_options<P: AsRef<Utf8Path>>(
     files_root: P,
-    queue_name: String,
     root_subject: String,
     listener_port: u16,
 ) -> OxidicomEnvOptions {
     OxidicomEnvOptions {
-        amqp_address: "amqp://localhost:5672".to_string(),
         files_root: files_root.as_ref().to_path_buf(),
-        queue_name,
         nats_address: Some("localhost:4222".to_string()),
         progress_interval: Duration::from_millis(50),
         scp: DicomRsSettings {
@@ -48,5 +45,8 @@ pub(crate) fn create_test_options<P: AsRef<Utf8Path>>(
         listener_port,
         dev_sleep: None,
         root_subject,
+        cube_login_url: "http://localhost:8000/api/v1/auth-token/".to_string(),
+        cube_chris_password: "chris1234".to_string(),
+        cube_series_url: "http://localhost:8000/api/v1/pacs/series/".to_string(),
     }
 }

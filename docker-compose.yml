@@ -1,24 +1,116 @@
+name: oxidicom-dev
+
 services:
+  db_migrate:
+    image: ghcr.io/fnndsc/cube:6.10.0
+    command: python manage.py migrate --noinput
+    volumes: &CHRIS_VOLUMES
+      - ./tests/data:/data:rw
+    environment: &CHRIS_ENV
+      CHRIS_SUPERUSER_PASSWORD: "chris1234"
+      DJANGO_SETTINGS_MODULE: "config.settings.production"
+      CUBE_CELERY_POLL_INTERVAL: "5.0"
+      DJANGO_ALLOWED_HOSTS: "*"
+      DJANGO_SECRET_KEY: secret
+      DJANGO_CORS_ALLOW_ALL_ORIGINS: "true"
+      DJANGO_SECURE_PROXY_SSL_HEADER: ""
+      DJANGO_USE_X_FORWARDED_HOST: "false"
+      DATABASE_CONN_POOL: "false"
+      DATABASE_HOST: "db"
+      DATABASE_PORT: "5432"
+      POSTGRES_DB: "oxidicom-dev"
+      POSTGRES_USER: "chris"
+      POSTGRES_PASSWORD: "chris1234"
+      CHRIS_STORE_URL: "https://cube.chrisproject.org/api/v1/"
+      STORAGE_ENV: "fslink"
+      MEDIA_ROOT: "/data"
+      CELERY_BROKER_URL: "amqp://rabbitmq:5672"
+      NATS_ADDRESS: "nats://nats:4222"
+      PFDCM_ADDRESS: "http://pfdcm:4005"
+      AUTH_LDAP: "false"
+      DISABLE_USER_ACCOUNT_CREATION: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  chris:
+    image: ghcr.io/fnndsc/cube:6.10.0
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes: *CHRIS_VOLUMES
+    environment: *CHRIS_ENV
+    depends_on: &CHRIS_DEPENDS
+      db_migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      cube-nonroot-user-volume-fix:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-O", "/dev/null", "http://localhost:8000/api/v1/"]
+      interval: 2s
+      timeout: 4s
+      retries: 3
+      start_period: 30s
+
+  db:
+    image: docker.io/library/postgres:18
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql
+    environment:
+      POSTGRES_DB: "oxidicom-dev"
+      POSTGRES_USER: "chris"
+      POSTGRES_PASSWORD: "chris1234"
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 2s
+      timeout: 4s
+      retries: 3
+      start_period: 60s
+
   rabbitmq:
-    image: docker.io/library/rabbitmq:3
+    image: docker.io/library/rabbitmq:4
     ports:
       - "5672:5672"
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      start_period: 30s
+      retries: 3
+      timeout: 10s
+      interval: 5s
+
   nats:
-    image: docker.io/library/nats:2.12.0
+    image: docker.io/library/nats:2.10.20-alpine3.20
     ports:
-      - "4222:4222"
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
+    healthcheck:
+      test: wget http://localhost:8222/healthz -q -S -O -
+      start_period: 20s
+      retries: 3
+      timeout: 10s
+      interval: 5s
+
   orthanc:
     image: docker.io/jodogne/orthanc:1.12.9
     volumes:
       - ./orthanc.json:/etc/orthanc/orthanc.json:ro
       - orthanc:/var/lib/orthanc/db
-    network_mode: "host"
+    network_mode: host
     healthcheck:
       test: ["CMD", "wget", "-O", "/dev/null", "http://localhost:8042/patients"]
       interval: 2s
       timeout: 4s
       retries: 3
       start_period: 30s
+
   get-data:
     image: ghcr.io/fnndsc/utils:7c65939
     command: /get_data.sh
@@ -28,10 +120,20 @@ services:
       orthanc:
         condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
     profiles:
       - tools
-    network_mode: "host"  # so that Orthanc in a container can send data out
+    network_mode: "host" # so that Orthanc in a container can send data out
+
+  # Non-root container user workarounds
+  cube-nonroot-user-volume-fix:
+    image: docker.io/library/alpine:latest
+    volumes:
+      - ./tests/data:/data:rws
+    user: root
+    command: chmod g+rwx /data
+    restart: "no"
 
 volumes:
   orthanc:
+  db_data:
