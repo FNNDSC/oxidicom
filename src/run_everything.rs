@@ -27,7 +27,9 @@ pub async fn run_everything<F>(
         dev_sleep,
         root_subject,
         cube_login_url,
+        cube_chris_username,
         cube_chris_password,
+        cube_chris_refresh_duration,
         cube_series_url,
     }: OxidicomEnvOptions,
     finite_connections: Option<usize>,
@@ -62,7 +64,9 @@ where
         cube_publisher(
             rx_cube,
             cube_login_url,
+            cube_chris_username,
             cube_chris_password,
+            cube_chris_refresh_duration,
             cube_series_url,
         )
         .await?;

@@ -4,6 +4,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use futures::TryStreamExt;
 use oxidicom::cube_publisher::get_chris_token;
 use oxidicom::types::CollectionJSON;
+use oxidicom::types::LoginParams;
 use oxidicom::{AETitle, SeriesKey};
 use reqwest::header::AUTHORIZATION;
 
@@ -19,7 +20,11 @@ pub async fn assert_cube_record(series_instance_uid: String) {
 
     let cube_login_url = "http://localhost:8000/api/v1/auth-token/".to_string();
     let cube_chris_password = "chris1234".to_string();
-    let cube_chris_token = get_chris_token(&client, cube_login_url, cube_chris_password).await;
+    let params = LoginParams {
+        username: "chris".to_string(),
+        password: cube_chris_password,
+    };
+    let cube_chris_token = get_chris_token(&client, &cube_login_url, &params).await;
 
     let cube_series_url = format!(
         "http://localhost:8000/api/v1/pacs/series/search/?SeriesInstanceUID={series_instance_uid}"

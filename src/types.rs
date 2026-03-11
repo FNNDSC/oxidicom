@@ -76,7 +76,7 @@ pub(crate) struct DicomInfo<P> {
 }
 
 #[derive(serde::Serialize)]
-pub(crate) struct LoginParams {
+pub struct LoginParams {
     pub username: String,
     pub password: String,
 }

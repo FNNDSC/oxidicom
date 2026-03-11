@@ -34,7 +34,7 @@ pub(crate) async fn lonk_publisher(
             limited_send_lonk(subject, lonk, client, &limiter).await?;
         }
         if let Some(sleep_duration) = sleep {
-            tracing::info!("OXIDICOM_DEV_SLEEP is set, sleeping for {:?}. Please unset this option in production!", sleep_duration);
+            // tracing::info!("OXIDICOM_DEV_SLEEP is set, sleeping for {:?}. Please unset this option in production!", sleep_duration);
             tokio::time::sleep(sleep_duration).await;
         }
     }

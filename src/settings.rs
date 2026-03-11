@@ -22,7 +22,11 @@ pub struct OxidicomEnvOptions {
     #[serde(default = "default_root_subject")]
     pub root_subject: String,
     pub cube_login_url: String,
+    #[serde(default = "default_chris_username")]
+    pub cube_chris_username: String,
     pub cube_chris_password: String,
+    #[serde(default = "default_chris_refresh_duration")]
+    pub cube_chris_refresh_duration: i64,
     pub cube_series_url: String,
 }
 
@@ -47,4 +51,12 @@ fn default_max_pdu_length() -> usize {
 
 fn default_root_subject() -> String {
     "oxidicom".to_string()
+}
+
+fn default_chris_username() -> String {
+    "chris".to_string()
+}
+
+fn default_chris_refresh_duration() -> i64 {
+    return 3600;
 }
