@@ -19,17 +19,10 @@ const CALLING_AE_TITLE: &str = "OXIDICOMTEST";
 #[tokio::test(flavor = "multi_thread")]
 async fn test_run_everything_from_env() {
     init_logging();
-    let temp_dir = tempfile::tempdir().unwrap();
-    let temp_dir_path = Utf8Path::from_path(temp_dir.path()).unwrap();
+    let path_str = "./tests/data".to_string();
+    let temp_dir_path = Utf8Path::new(&path_str);
 
-    let queue_name = names::Generator::default().next().unwrap();
-    let options = create_test_options(
-        temp_dir_path,
-        queue_name.to_string(),
-        ROOT_SUBJECT.to_string(),
-        11112, // Orthanc is configured to push here
-    );
-    let amqp_address = options.amqp_address.clone();
+    let options = create_test_options(temp_dir_path, ROOT_SUBJECT.to_string(), 11112);
     let nats = async_nats::connect(options.nats_address.as_ref().unwrap())
         .await
         .unwrap();
@@ -57,43 +50,57 @@ async fn test_run_everything_from_env() {
     // wait for message from `on_start` indicating server is ready for connections
     start_rx.await.unwrap();
 
+    tracing::info!(msg = "to orthanc store".to_string());
+
     // tell Orthanc to send the test data to us
     futures::stream::iter(EXPECTED_SERIES.iter().map(|s| s.SeriesInstanceUID.as_str()))
         .for_each_concurrent(2, |series_instance_uid| async move {
+            tracing::info!(
+                msg = "to orthanc store".to_string(),
+                series_instance_uid = series_instance_uid,
+            );
             let res = orthanc_store(ORTHANC_URL, CALLING_AE_TITLE, series_instance_uid)
                 .await
                 .unwrap();
+            tracing::info!(
+                msg = "done orthanc store".to_string(),
+                series_instance_uid = series_instance_uid,
+            );
+
             assert_eq!(res.failed_instances_count, 0);
         })
         .await;
 
+    tracing::info!(msg = "to wait server handle".to_string());
+
     // wait for server to shut down
     server_handle.await.unwrap().unwrap();
+
+    tracing::info!(msg = "after wait server handle".to_string());
 
     // get messages from NATS
     let lonk_messages = nats_subscriber_loop.await.unwrap();
 
     // run all assertions
     assert_files_stored(&temp_dir_path).await;
-    assert_rabbitmq_messages(&amqp_address, &queue_name).await;
     assert_lonk_messages(lonk_messages);
+    assert_cube_record("1.3.12.2.1107.5.2.19.45152.2013030808061520200285270.0.0.0".to_string())
+        .await;
+    assert_cube_record(
+        "1.2.826.0.1.3680043.2.1143.515404396022363061013111326823367652".to_string(),
+    )
+    .await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_missing_studydate_error_sent_to_nats() {
     // SMELL: lots of code duplication with test_run_everything_from_env
     init_logging();
-    let temp_dir = tempfile::tempdir().unwrap();
-    let temp_dir_path = Utf8Path::from_path(temp_dir.path()).unwrap();
-    let queue_name = names::Generator::default().next().unwrap();
+    let path_str = "./tests/data".to_string();
+    let temp_dir_path = Utf8Path::new(&path_str);
     let root_subject = "test-missing-studydate.oxidicom";
     let port = 11113;
-    let options = create_test_options(
-        temp_dir_path,
-        queue_name.to_string(),
-        root_subject.to_string(),
-        port,
-    );
+    let options = create_test_options(temp_dir_path, root_subject.to_string(), port);
     let nats = async_nats::connect(options.nats_address.as_ref().unwrap())
         .await
         .unwrap();

@@ -14,10 +14,11 @@ Documentation: https://chrisproject.org/docs/oxidicom
 
 You'll need: [Docker Compose](https://docs.docker.com/compose/) and [Rust](https://rustup.rs/).
 
-Start [RabbitMQ](https://hub.docker.com/_/rabbitmq) and [Orthanc](https://www.orthanc-server.com/)
+Start [CUBE](https://github.com/FNNDSC/ChRIS_ultron_backEnd) and [Orthanc](https://www.orthanc-server.com/)
 services for testing, then download test data:
 
 ```shell
+mkdir -p tests/data && rm -rf tests/data/SERVICES
 docker compose up -d
 docker compose run --rm get-data
 ```

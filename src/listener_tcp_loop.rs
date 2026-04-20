@@ -60,6 +60,7 @@ where
                     }
                     match handle_association(scu_stream, &options, max_pdu_length, &handler, ulid) {
                         Ok(..) => {
+                            tracing::info!("handle association: Finish: ulid: {:?}", ulid);
                             handler
                                 .send(AssociationEvent::Finish { ulid, ok: true })
                                 .unwrap();

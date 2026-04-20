@@ -2,12 +2,13 @@
 
 use crate::enums::SeriesEvent;
 use crate::error::DicomStorageError;
-use crate::registration_task::register_pacs_series;
 use aliri_braid::braid;
-use celery::task::Signature;
+use serde_json::Value;
 use time::macros::format_description;
 use tokio::task::JoinHandle;
 use ulid::Ulid;
+
+pub(crate) type CubeRegistrationParams = (DicomInfo<SeriesPath>, u32);
 
 /// Path in storage to a DICOM instance file.
 #[braid(serde)]
@@ -74,29 +75,97 @@ pub(crate) struct DicomInfo<P> {
     pub SeriesDescription: Option<String>,
 }
 
+#[derive(serde::Serialize)]
+pub struct LoginParams {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CollectionJSON {
+    pub collection: CollectionJSONCollection,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CollectionJSONCollection {
+    pub version: String,
+    pub href: String,
+    pub items: Vec<CollectionJSONItem>,
+    pub links: Vec<CollectionJSONLink>,
+    pub total: u32,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CollectionJSONItem {
+    pub data: Vec<CollectionJSONData>,
+    pub href: String,
+    pub links: Vec<CollectionJSONLink>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CollectionJSONLink {
+    pub rel: String,
+    pub href: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CollectionJSONData {
+    pub name: String,
+    pub value: Value,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct AuthToken {
+    pub token: String,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct DicomInfoWithNDicom {
+    pub PatientID: String,
+    pub StudyDate: String,
+    pub StudyInstanceUID: String,
+    pub SeriesInstanceUID: String,
+    pub pacs_name: AETitle,
+    pub path: SeriesPath,
+    pub PatientName: Option<String>,
+    pub PatientBirthDate: Option<String>,
+    pub PatientAge: Option<i32>,
+    pub PatientSex: Option<String>,
+    pub AccessionNumber: Option<String>,
+    pub Modality: Option<String>,
+    pub ProtocolName: Option<String>,
+    pub StudyDescription: Option<String>,
+    pub SeriesDescription: Option<String>,
+    pub ndicom: u32,
+}
+
 impl DicomInfo<SeriesPath> {
-    /// Create task.
-    pub fn into_task(self, ndicom: u32) -> Signature<register_pacs_series> {
-        register_pacs_series::new(
-            self.PatientID,
-            self.StudyDate
+    pub fn into_dicominfo_with_ndicom(self, ndicom: u32) -> DicomInfoWithNDicom {
+        let accessionNumber = match self.AccessionNumber {
+            Some(b) => b,
+            None => "".to_string(),
+        };
+        DicomInfoWithNDicom {
+            PatientID: self.PatientID,
+            StudyDate: self
+                .StudyDate
                 .format(format_description!("[year]-[month]-[day]"))
                 .unwrap(),
-            self.StudyInstanceUID,
-            self.SeriesInstanceUID,
-            self.pacs_name,
-            self.path,
+            StudyInstanceUID: self.StudyInstanceUID,
+            SeriesInstanceUID: self.SeriesInstanceUID,
+            pacs_name: self.pacs_name,
+            path: self.path,
+            PatientName: self.PatientName,
+            PatientBirthDate: self.PatientBirthDate,
+            PatientAge: self.PatientAge,
+            PatientSex: self.PatientSex,
+            AccessionNumber: Some(accessionNumber),
+            Modality: self.Modality,
+            ProtocolName: self.ProtocolName,
+            StudyDescription: self.StudyDescription,
+            SeriesDescription: self.SeriesDescription,
             ndicom,
-            self.PatientName,
-            self.PatientBirthDate,
-            self.PatientAge,
-            self.PatientSex,
-            self.AccessionNumber,
-            self.Modality,
-            self.ProtocolName,
-            self.StudyDescription,
-            self.SeriesDescription,
-        )
+        }
     }
 }
 

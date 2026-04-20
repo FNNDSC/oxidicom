@@ -1,9 +1,9 @@
-use crate::celery_publisher::CubeRegistrationParams;
 use crate::channel_helpers::{send_error_left, send_error_right};
 use crate::enums::SeriesEvent;
 use crate::error::DicomStorageError;
 use crate::lonk::Lonk;
 use crate::lonk_publisher::PublishLonkParams;
+use crate::types::CubeRegistrationParams;
 use crate::types::{DicomInfo, SeriesKey, SeriesPath};
 use either::Either;
 use std::collections::HashMap;
@@ -19,7 +19,7 @@ pub(crate) async fn messenger(
         SeriesEvent<Result<(), DicomStorageError>, DicomInfo<SeriesPath>>,
     )>,
     tx_lonk: &UnboundedSender<PublishLonkParams>,
-    tx_celery: &UnboundedSender<CubeRegistrationParams>,
+    tx_cube: &UnboundedSender<CubeRegistrationParams>,
 ) -> Result<(), SendError<Either<PublishLonkParams, CubeRegistrationParams>>> {
     let mut counts: SeriesCounts = Default::default();
     while let Some((series, event)) = receiver.recv().await {
@@ -28,7 +28,7 @@ pub(crate) async fn messenger(
             tx_lonk.send(lonk).map_err(send_error_left)?;
         }
         if let Some(registration_params) = rp {
-            tx_celery
+            tx_cube
                 .send(registration_params)
                 .map_err(send_error_right)?;
         }

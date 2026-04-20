@@ -2,16 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
     tags:
       - "v?[0-9]+.[0-9]+.[0-9]+*"
     paths:
-      - '.github/**'
-      - '**.rs'
-      - 'Cargo.*'
-      - 'docker-compose.yml'
+      - ".github/**"
+      - "**.rs"
+      - "Cargo.*"
+      - "docker-compose.yml"
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,126 +21,128 @@ jobs:
     name: Test
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v4
-    - name: Start services
-      run: docker compose up -d
-    - name: Download example data
-      run: docker compose run --rm get-data
-    - name: Cache rust build
-      uses: Swatinem/rust-cache@v2
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
-    - name: Run tests
-      env:
-        RUST_LOG: oxidicom=debug,integration_test=debug
-      run: cargo llvm-cov test --locked --codecov --output-path codecov.json
-    - name: Print service logs
-      if: failure()
-      run: docker compose logs
-    - name: Upload coverage to Codecov
-      if: always()
-      uses: codecov/codecov-action@v5
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: codecov.json
-        fail_ci_if_error: true
+      - uses: actions/checkout@v4
+      - name: mkdir tests/data
+        run: mkdir -p tests/data
+      - name: Start services
+        run: docker compose up -d
+      - name: Download example data
+        run: docker compose run --rm get-data
+      - name: Cache rust build
+        uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Run tests
+        env:
+          RUST_LOG: oxidicom=debug,integration_test=debug
+        run: cargo llvm-cov test --locked --codecov --output-path codecov.json
+      - name: Print service logs
+        if: failure()
+        run: docker compose logs
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: codecov.json
+          fail_ci_if_error: true
   build-rust:
     name: Build Rust binary
     runs-on: ubuntu-24.04
-    needs: [ test ]
+    needs: [test]
     strategy:
       matrix:
         target:
-        - aarch64-unknown-linux-musl
-        - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+          - x86_64-unknown-linux-musl
     steps:
-    - uses: actions/checkout@v4
-    - name: Cache rust build
-      uses: Swatinem/rust-cache@v2
-    - name: Build
-      uses: houseabsolute/actions-rust-cross@f7da4010930154943c99d13df0151dece91a924f  # v1.0.4
-      with:
-        target: ${{ matrix.target }}
-        command: build
-        args: --release --locked
-    - name: Move binary
-      run: |
-        mkdir dist
-        mv target/${{ matrix.target }}/release/oxidicom dist/oxidicom
-    - name: Calculate checksum
-      run: |
-        cd dist
-        sha256 oxidicom | tee oxidicom.sha256sum
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: 'build__${{ matrix.target }}'
-        path: dist
-        if-no-files-found: 'error'
+      - uses: actions/checkout@v4
+      - name: Cache rust build
+        uses: Swatinem/rust-cache@v2
+      - name: Build
+        uses: houseabsolute/actions-rust-cross@f7da4010930154943c99d13df0151dece91a924f # v1.0.4
+        with:
+          target: ${{ matrix.target }}
+          command: build
+          args: --release --locked
+      - name: Move binary
+        run: |
+          mkdir dist
+          mv target/${{ matrix.target }}/release/oxidicom dist/oxidicom
+      - name: Calculate checksum
+        run: |
+          cd dist
+          sha256 oxidicom | tee oxidicom.sha256sum
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: "build__${{ matrix.target }}"
+          path: dist
+          if-no-files-found: "error"
   build-docker:
     name: Build container image
     runs-on: ubuntu-24.04
-    needs: [ build-rust ]
+    needs: [build-rust]
     steps:
-    - name: Download x86_64 binary
-      uses: actions/download-artifact@v4
-    - name: Print out all files
-      run: find -type f
-    - name: Print expected checksums
-      run: find -type f -name '*.sha256sum' -exec sh -c 'echo {} && cat {}' \;
-    - name: Calculate actual checksums
-      run: find -type f -name 'oxidicom' -exec sha256sum '{}' \;
-    - name: Move binaries and mark executable
-      run: |
-        mkdir -vp dist/linux/amd64 dist/linux/arm64
-        mv -v build__x86_64-unknown-linux-musl/oxidicom dist/linux/amd64/oxidicom
-        mv -v build__aarch64-unknown-linux-musl/oxidicom dist/linux/arm64/oxidicom
-        chmod -v 555 dist/linux/{amd64,arm64}/oxidicom
-    - name: Create Dockerfile
-      run: |
-        cat > Dockerfile << EOF
-        # syntax=docker/dockerfile:1
-        FROM scratch
-        ARG TARGETPLATFORM
-        COPY ./dist/\$TARGETPLATFORM/oxidicom /oxidicom
-        CMD ["/oxidicom"]
-        EOF
-    - uses: docker/metadata-action@v5
-      id: meta
-      with:
-        images: |
-          docker.io/fnndsc/oxidicom
-          ghcr.io/fnndsc/oxidicom
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=raw,value=latest,enable={{is_default_branch}}
-    - uses: docker/setup-qemu-action@v3
-    - uses: docker/setup-buildx-action@v3
-    - name: Login to DockerHub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_PASSWORD }}
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    - name: Build and push
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        push: true
-        file: ./Dockerfile
-        platforms: linux/amd64,linux/arm64
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+      - name: Download x86_64 binary
+        uses: actions/download-artifact@v4
+      - name: Print out all files
+        run: find -type f
+      - name: Print expected checksums
+        run: find -type f -name '*.sha256sum' -exec sh -c 'echo {} && cat {}' \;
+      - name: Calculate actual checksums
+        run: find -type f -name 'oxidicom' -exec sha256sum '{}' \;
+      - name: Move binaries and mark executable
+        run: |
+          mkdir -vp dist/linux/amd64 dist/linux/arm64
+          mv -v build__x86_64-unknown-linux-musl/oxidicom dist/linux/amd64/oxidicom
+          mv -v build__aarch64-unknown-linux-musl/oxidicom dist/linux/arm64/oxidicom
+          chmod -v 555 dist/linux/{amd64,arm64}/oxidicom
+      - name: Create Dockerfile
+        run: |
+          cat > Dockerfile << EOF
+          # syntax=docker/dockerfile:1
+          FROM scratch
+          ARG TARGETPLATFORM
+          COPY ./dist/\$TARGETPLATFORM/oxidicom /oxidicom
+          CMD ["/oxidicom"]
+          EOF
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: |
+            docker.io/fnndsc/oxidicom
+            ghcr.io/fnndsc/oxidicom
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # Re-reun tests many times to detect race conditions.
   # https://github.com/FNNDSC/oxidicom/issues/4
@@ -149,6 +151,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: mkdir tests/data
+        run: mkdir -p tests/data
       - name: Start services
         run: docker compose up -d
       - name: Download example data

@@ -1,19 +1,63 @@
 pub use crate::util::expected::EXPECTED_SERIES;
-use crate::util::model::SeriesParams;
 use async_walkdir::WalkDir;
 use camino::{Utf8Path, Utf8PathBuf};
-use celery::broker::{AMQPBrokerBuilder, BrokerBuilder};
-use celery::prelude::BrokerError;
-use celery::protocol::MessageBody;
-use futures::{stream, StreamExt, TryStreamExt};
-use oxidicom::{register_pacs_series, AETitle, SeriesKey};
-use std::collections::HashSet;
+use futures::TryStreamExt;
+use oxidicom::cube_publisher::get_chris_token;
+use oxidicom::types::CollectionJSON;
+use oxidicom::types::LoginParams;
+use oxidicom::{AETitle, SeriesKey};
+use reqwest::header::AUTHORIZATION;
 
 pub const ROOT_SUBJECT: &str = "test.oxidicom";
 
 pub async fn assert_files_stored(storage_path: &Utf8Path) {
     let (expected, actual) = tokio::join!(expected_files(), find_files(storage_path));
     pretty_assertions::assert_eq!(expected, actual)
+}
+
+pub async fn assert_cube_record(series_instance_uid: String) {
+    let client = reqwest::Client::new();
+
+    let cube_login_url = "http://localhost:8000/api/v1/auth-token/".to_string();
+    let cube_chris_password = "chris1234".to_string();
+    let params = LoginParams {
+        username: "chris".to_string(),
+        password: cube_chris_password,
+    };
+    let cube_chris_token = get_chris_token(&client, &cube_login_url, &params).await;
+
+    let cube_series_url = format!(
+        "http://localhost:8000/api/v1/pacs/series/search/?SeriesInstanceUID={series_instance_uid}"
+    )
+    .to_string();
+
+    let res = client
+        .get(&cube_series_url)
+        .header(AUTHORIZATION, format!("Token {cube_chris_token}"))
+        .send()
+        .await;
+
+    match res {
+        Ok(r) => {
+            let collection_json = r.json::<CollectionJSON>().await;
+            match collection_json {
+                Ok(collection_res) => {
+                    tracing::info!(
+                        msg = format!("collection_json: {x}", x = collection_res.collection.total),
+                    );
+                    assert_eq!(collection_res.collection.total, 1);
+                }
+                Err(e) => {
+                    tracing::error!(msg = format!("unable to r.json: e: {e}"));
+                    assert!(false);
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!(msg = format!("unable to client.send: e: {e}"));
+            assert!(false);
+        }
+    }
 }
 
 async fn expected_files() -> Vec<String> {
@@ -47,52 +91,6 @@ async fn find_files(storage_path: &Utf8Path) -> Vec<String> {
         .unwrap();
     files.sort();
     files
-}
-
-pub async fn assert_rabbitmq_messages(address: &str, queue_name: &str) {
-    let broker = Box::new(AMQPBrokerBuilder::new(address))
-        .declare_queue(queue_name)
-        .build(1000)
-        .await
-        .unwrap();
-    let error_handler = Box::new(move |e: BrokerError| panic!("{:?}", e));
-    let (_consumer_tag, consumer) = broker.consume(queue_name, error_handler).await.unwrap();
-
-    // Deserialize deliveries into messages
-    let messages_stream = consumer.try_filter_map(|delivery| async move {
-        delivery.ack().await.unwrap();
-        let body = delivery
-            .try_deserialize_message()
-            .and_then(|m| m.body::<register_pacs_series>())
-            .unwrap();
-        Ok(Some(body))
-    });
-
-    // Read the expected number of messages from the stream
-    let params: HashSet<SeriesParams> = stream::iter(0..EXPECTED_SERIES.len())
-        .zip(messages_stream)
-        .map(|(_, r)| r)
-        .try_filter_map(|r| async { Ok(Some(deserialize_params(r))) })
-        .try_collect()
-        .await
-        .map_err(|e| format!("{}", e))
-        .unwrap();
-
-    assert_eq!(&*EXPECTED_SERIES, &params);
-}
-
-fn deserialize_params<T: celery::task::Task, D: serde::de::DeserializeOwned>(
-    body: MessageBody<T>,
-) -> D {
-    if let serde_json::Value::Array(v) = serde_json::to_value(body).unwrap() {
-        return v
-            .into_iter()
-            .map(serde_json::from_value)
-            .filter_map(|r| r.ok())
-            .next()
-            .expect("No elements were deserializable to the specified type.");
-    }
-    panic!("Expected body to be an array, but it is not.")
 }
 
 pub fn assert_lonk_messages(messages: Vec<async_nats::Message>) {

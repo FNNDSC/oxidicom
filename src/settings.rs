@@ -6,10 +6,7 @@ use std::num::NonZeroUsize;
 
 #[derive(Debug, Deserialize)]
 pub struct OxidicomEnvOptions {
-    pub amqp_address: String,
     pub files_root: Utf8PathBuf,
-    #[serde(default = "default_queue_name")]
-    pub queue_name: String,
     pub nats_address: Option<String>,
     #[serde(with = "humantime_serde", default = "default_progress_interval")]
     pub progress_interval: std::time::Duration,
@@ -24,15 +21,18 @@ pub struct OxidicomEnvOptions {
     pub dev_sleep: Option<std::time::Duration>,
     #[serde(default = "default_root_subject")]
     pub root_subject: String,
+    pub cube_login_url: String,
+    #[serde(default = "default_chris_username")]
+    pub cube_chris_username: String,
+    pub cube_chris_password: String,
+    #[serde(default = "default_chris_refresh_duration")]
+    pub cube_chris_refresh_duration: i64,
+    pub cube_series_url: String,
 }
 
 /// The name of the queue used by the `register_pacs_series` celery task in *CUBE*'s code.
 ///
 /// https://github.com/FNNDSC/ChRIS_ultron_backEnd/blob/b3cb0afa068b2cfb5a89eea22ff9b41437dc6f2a/chris_backend/core/celery.py#L36
-fn default_queue_name() -> String {
-    "main2".to_string()
-}
-
 fn default_listener_threads() -> NonZeroUsize {
     NonZeroUsize::new(8).unwrap()
 }
@@ -51,4 +51,12 @@ fn default_max_pdu_length() -> usize {
 
 fn default_root_subject() -> String {
     "oxidicom".to_string()
+}
+
+fn default_chris_username() -> String {
+    "chris".to_string()
+}
+
+fn default_chris_refresh_duration() -> i64 {
+    return 3600;
 }
