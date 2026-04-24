@@ -1,6 +1,6 @@
 use crate::orthanc_client::orthanc_store;
 use crate::util::assertions::*;
-use crate::util::dicom_wo_studydate::{create_dicom_without_studydate, SERIES};
+use crate::util::dicom_wo_studydate::{SERIES, create_dicom_without_studydate};
 use crate::util::expected::EXPECTED_SERIES;
 use crate::util::helpers::*;
 use crate::util::send_dicom::store_one_dicom;
@@ -29,7 +29,7 @@ async fn test_run_everything_from_env() {
         ROOT_SUBJECT.to_string(),
         11112, // Orthanc is configured to push here
     );
-    let amqp_address = options.amqp_address.clone();
+    let celery_broker = options.celery_broker.clone();
     let nats = async_nats::connect(options.nats_address.as_ref().unwrap())
         .await
         .unwrap();
@@ -75,7 +75,7 @@ async fn test_run_everything_from_env() {
 
     // run all assertions
     assert_files_stored(&temp_dir_path).await;
-    assert_rabbitmq_messages(&amqp_address, &queue_name).await;
+    assert_celery_messages(&celery_broker, &queue_name).await;
     assert_lonk_messages(lonk_messages);
 }
 

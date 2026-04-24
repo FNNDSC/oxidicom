@@ -17,7 +17,7 @@ use futures::TryFutureExt;
 /// 3. A notifier which sends events to CUBE as DICOM files are received
 pub async fn run_everything<F>(
     OxidicomEnvOptions {
-        amqp_address,
+        celery_broker,
         files_root,
         nats_address,
         progress_interval,
@@ -35,12 +35,21 @@ pub async fn run_everything<F>(
 where
     F: FnOnce(SocketAddrV4) + Send + 'static,
 {
-    let celery = celery::app!(
-        broker = AMQPBroker { amqp_address },
-        tasks = [crate::registration_task::register_pacs_series],
-        task_routes = [ "pacsfiles.tasks.register_pacs_series" => &queue_name ],
-    )
-    .await?;
+    let celery = if celery_broker.starts_with("redis://") {
+        celery::app!(
+            broker = RedisBroker { celery_broker },
+            tasks = [crate::registration_task::register_pacs_series],
+            task_routes = [ "pacsfiles.tasks.register_pacs_series" => &queue_name ],
+        )
+        .await
+    } else {
+        celery::app!(
+            broker = AMQPBroker { celery_broker },
+            tasks = [crate::registration_task::register_pacs_series],
+            task_routes = [ "pacsfiles.tasks.register_pacs_series" => &queue_name ],
+        )
+        .await
+    }?;
     let nats_client = if let Some(address) = nats_address {
         Some(async_nats::connect(address).await?)
     } else {

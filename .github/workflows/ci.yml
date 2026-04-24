@@ -21,15 +21,17 @@ jobs:
     name: Test
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Start services
       run: docker compose up -d
     - name: Download example data
       run: docker compose run --rm get-data
     - name: Cache rust build
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
     - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
+      uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95 # v2.75.20
+      with:
+        tool: cargo-llvm-cov
     - name: Run tests
       env:
         RUST_LOG: oxidicom=debug,integration_test=debug
@@ -39,7 +41,7 @@ jobs:
       run: docker compose logs
     - name: Upload coverage to Codecov
       if: always()
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: codecov.json
@@ -54,11 +56,11 @@ jobs:
         - aarch64-unknown-linux-musl
         - x86_64-unknown-linux-musl
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Cache rust build
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
     - name: Build
-      uses: houseabsolute/actions-rust-cross@f7da4010930154943c99d13df0151dece91a924f  # v1.0.4
+      uses: houseabsolute/actions-rust-cross@a8cc74d61047fa553b4e908b4b10e70029f00ca6 # v1.0.6
       with:
         target: ${{ matrix.target }}
         command: build
@@ -67,12 +69,8 @@ jobs:
       run: |
         mkdir dist
         mv target/${{ matrix.target }}/release/oxidicom dist/oxidicom
-    - name: Calculate checksum
-      run: |
-        cd dist
-        sha256 oxidicom | tee oxidicom.sha256sum
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: 'build__${{ matrix.target }}'
         path: dist
@@ -83,13 +81,9 @@ jobs:
     needs: [ build-rust ]
     steps:
     - name: Download x86_64 binary
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
     - name: Print out all files
       run: find -type f
-    - name: Print expected checksums
-      run: find -type f -name '*.sha256sum' -exec sh -c 'echo {} && cat {}' \;
-    - name: Calculate actual checksums
-      run: find -type f -name 'oxidicom' -exec sha256sum '{}' \;
     - name: Move binaries and mark executable
       run: |
         mkdir -vp dist/linux/amd64 dist/linux/arm64
@@ -105,7 +99,7 @@ jobs:
         COPY ./dist/\$TARGETPLATFORM/oxidicom /oxidicom
         CMD ["/oxidicom"]
         EOF
-    - uses: docker/metadata-action@v5
+    - uses: docker/metadata-action@v6
       id: meta
       with:
         images: |
@@ -117,21 +111,21 @@ jobs:
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
           type=raw,value=latest,enable={{is_default_branch}}
-    - uses: docker/setup-qemu-action@v3
-    - uses: docker/setup-buildx-action@v3
+    - uses: docker/setup-qemu-action@v4
+    - uses: docker/setup-buildx-action@v4
     - name: Login to DockerHub
-      uses: docker/login-action@v3
+      uses: docker/login-action@v4
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_PASSWORD }}
     - name: Login to GitHub Container Registry
-      uses: docker/login-action@v3
+      uses: docker/login-action@v4
       with:
         registry: ghcr.io
         username: ${{ github.repository_owner }}
         password: ${{ secrets.GITHUB_TOKEN }}
     - name: Build and push
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@v7
       with:
         context: .
         push: true
@@ -148,13 +142,13 @@ jobs:
     name: Rerun tests many times
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Start services
         run: docker compose up -d
       - name: Download example data
         run: docker compose run --rm get-data
       - name: Cache rust build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Compile test binary
         run: cargo test --no-run --locked
       - name: Run tests

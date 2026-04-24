@@ -6,7 +6,7 @@ use std::num::NonZeroUsize;
 
 #[derive(Debug, Deserialize)]
 pub struct OxidicomEnvOptions {
-    pub amqp_address: String,
+    pub celery_broker: String,
     pub files_root: Utf8PathBuf,
     #[serde(default = "default_queue_name")]
     pub queue_name: String,

@@ -2,11 +2,11 @@ pub use crate::util::expected::EXPECTED_SERIES;
 use crate::util::model::SeriesParams;
 use async_walkdir::WalkDir;
 use camino::{Utf8Path, Utf8PathBuf};
-use celery::broker::{AMQPBrokerBuilder, BrokerBuilder};
-use celery::prelude::BrokerError;
+use celery::broker::BrokerBuilder;
 use celery::protocol::MessageBody;
-use futures::{stream, StreamExt, TryStreamExt};
-use oxidicom::{register_pacs_series, AETitle, SeriesKey};
+use celery::{broker::RedisBrokerBuilder, prelude::BrokerError};
+use futures::{StreamExt, TryStreamExt, stream};
+use oxidicom::{AETitle, SeriesKey, register_pacs_series};
 use std::collections::HashSet;
 
 pub const ROOT_SUBJECT: &str = "test.oxidicom";
@@ -49,8 +49,8 @@ async fn find_files(storage_path: &Utf8Path) -> Vec<String> {
     files
 }
 
-pub async fn assert_rabbitmq_messages(address: &str, queue_name: &str) {
-    let broker = Box::new(AMQPBrokerBuilder::new(address))
+pub async fn assert_celery_messages(address: &str, queue_name: &str) {
+    let broker = Box::new(RedisBrokerBuilder::new(address))
         .declare_queue(queue_name)
         .build(1000)
         .await
@@ -60,7 +60,7 @@ pub async fn assert_rabbitmq_messages(address: &str, queue_name: &str) {
 
     // Deserialize deliveries into messages
     let messages_stream = consumer.try_filter_map(|delivery| async move {
-        delivery.ack().await.unwrap();
+        // delivery.ack().await.unwrap();  // FIXME: https://github.com/GaiaNet-AI/celery-rs/blob/v0.6.2/src/broker/redis.rs#L259
         let body = delivery
             .try_deserialize_message()
             .and_then(|m| m.body::<register_pacs_series>())
