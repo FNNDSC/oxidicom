@@ -75,7 +75,7 @@ async fn test_run_everything_from_env() {
 
     // run all assertions
     assert_files_stored(&temp_dir_path).await;
-    assert_rabbitmq_messages(&celery_broker, &queue_name).await;
+    assert_celery_messages(&celery_broker, &queue_name).await;
     assert_lonk_messages(lonk_messages);
 }
 

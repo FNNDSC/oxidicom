@@ -32,7 +32,7 @@ pub(crate) fn create_test_options<P: AsRef<Utf8Path>>(
     listener_port: u16,
 ) -> OxidicomEnvOptions {
     OxidicomEnvOptions {
-        celery_broker: "amqp://localhost:5672".to_string(),
+        celery_broker: "redis://127.0.0.1:6379/0".to_string(),
         files_root: files_root.as_ref().to_path_buf(),
         queue_name,
         nats_address: Some("localhost:4222".to_string()),
