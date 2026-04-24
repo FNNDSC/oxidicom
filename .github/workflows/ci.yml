@@ -69,10 +69,6 @@ jobs:
       run: |
         mkdir dist
         mv target/${{ matrix.target }}/release/oxidicom dist/oxidicom
-    - name: Calculate checksum
-      run: |
-        cd dist
-        sha256 oxidicom | tee oxidicom.sha256sum
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
       with:
@@ -88,10 +84,6 @@ jobs:
       uses: actions/download-artifact@v8
     - name: Print out all files
       run: find -type f
-    - name: Print expected checksums
-      run: find -type f -name '*.sha256sum' -exec sh -c 'echo {} && cat {}' \;
-    - name: Calculate actual checksums
-      run: find -type f -name 'oxidicom' -exec sha256sum '{}' \;
     - name: Move binaries and mark executable
       run: |
         mkdir -vp dist/linux/amd64 dist/linux/arm64
