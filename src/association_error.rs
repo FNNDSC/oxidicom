@@ -6,10 +6,10 @@ use dicom::ul::pdu::AbortRQSource;
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum AssociationError {
     #[error("Could not establish association.")]
-    CouldNotEstablish(dicom::ul::association::server::Error),
+    CouldNotEstablish(dicom::ul::association::Error),
 
     #[error("Error receiving PDU.")]
-    PduReception(#[from] dicom::ul::association::server::Error),
+    PduReception(#[from] dicom::ul::association::Error),
 
     #[error("Failed to read incoming DICOM command")]
     FailedToReadCommand(dicom::object::ReadError),

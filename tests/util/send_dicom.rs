@@ -4,8 +4,9 @@ use dicom::dicom_value;
 use dicom::dictionary_std::{tags, uids};
 use dicom::object::{InMemDicomObject, StandardDataDictionary};
 use dicom::transfer_syntax::entries;
-use dicom_ul::pdu::{PDataValue, PDataValueType};
-use dicom_ul::{ClientAssociation, ClientAssociationOptions, Pdu};
+use dicom::ul::association::AsyncClientAssociation;
+use dicom::ul::pdu::{PDataValue, PDataValueType};
+use dicom::ul::{ClientAssociationOptions, Pdu};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
@@ -28,9 +29,9 @@ pub(crate) async fn store_one_dicom(addr: &str, dcm: InMemDicomObject) {
 /// Copied from
 /// https://github.com/Enet4/dicom-rs/blob/801553a2112950930d98ac20c331810461629990/storescu/src/store_async.rs
 pub async fn send_dicom(
-    mut scu: ClientAssociation<TcpStream>,
+    mut scu: AsyncClientAssociation<TcpStream>,
     dcm: InMemDicomObject,
-) -> ClientAssociation<TcpStream> {
+) -> AsyncClientAssociation<TcpStream> {
     let sop_class_uid = uids::COMPUTED_RADIOGRAPHY_IMAGE_STORAGE;
     let sop_instance_uid = dcm
         .element(tags::SOP_INSTANCE_UID)
@@ -91,7 +92,7 @@ pub async fn send_dicom(
         scu.send(&pdu).await.unwrap();
 
         {
-            let mut pdata = scu.send_pdata(pc_selected.id).await;
+            let mut pdata = scu.send_pdata(pc_selected.id);
             pdata.write_all(&object_data).await.unwrap();
         }
     }
