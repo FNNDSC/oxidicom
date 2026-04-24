@@ -14,6 +14,7 @@ use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom::ul::association::server::AcceptAny;
 use dicom::ul::pdu::PDataValueType;
 use dicom::ul::{Pdu, ServerAssociationOptions};
+use dicom_ul::association::Association;
 use opentelemetry::KeyValue;
 use opentelemetry::trace::TraceContextExt;
 use tokio::sync::mpsc::UnboundedSender;
@@ -37,7 +38,7 @@ pub fn handle_association(
 ) -> Result<(), AssociationError> {
     let mut association = options.establish(scu_stream).map_err(CouldNotEstablish)?;
     let context = opentelemetry::Context::current();
-    let aec = AETitle::from(association.client_ae_title());
+    let aec = AETitle::from(association.peer_ae_title());
     context
         .span()
         .set_attribute(KeyValue::new("aet", aec.to_string()));
@@ -207,10 +208,7 @@ pub fn handle_association(
                         .span()
                         .add_event("failed_to_send_association_release", a);
                 });
-                tracing::info!(
-                    "Released association with {}",
-                    association.client_ae_title()
-                );
+                tracing::info!("Released association with {}", association.peer_ae_title());
                 break;
             }
             Pdu::AbortRQ { source } => {
@@ -224,11 +222,11 @@ pub fn handle_association(
     if let Ok(peer_addr) = association.inner_stream().peer_addr() {
         tracing::info!(
             "Dropping connection with {} ({})",
-            association.client_ae_title(),
+            association.peer_ae_title(),
             peer_addr
         );
     } else {
-        tracing::info!("Dropping connection with {}", association.client_ae_title());
+        tracing::info!("Dropping connection with {}", association.peer_ae_title());
     }
     Ok(())
 }
@@ -283,11 +281,11 @@ fn create_cecho_response(message_id: u16) -> InMemDicomObject<StandardDataDictio
 
 /// Returns `None` if source is [dicom::ul::pdu::reader::Error::NoPduAvailable]
 fn bubble_no_pdu(
-    pdu: Result<Pdu, dicom::ul::association::server::Error>,
-) -> Result<Option<Pdu>, dicom::ul::association::server::Error> {
+    pdu: Result<Pdu, dicom::ul::association::Error>,
+) -> Result<Option<Pdu>, dicom::ul::association::Error> {
     pdu.map(Some).or_else(|e| {
-        if let dicom::ul::association::server::Error::Receive { source } = &e {
-            if matches!(source, dicom::ul::pdu::reader::Error::NoPduAvailable { .. }) {
+        if let dicom::ul::association::Error::ReceivePdu { source } = &e {
+            if matches!(source, dicom::ul::pdu::ReadError::NoPduAvailable { .. }) {
                 Ok(None)
             } else {
                 Err(e)
