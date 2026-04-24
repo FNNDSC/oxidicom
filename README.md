@@ -12,14 +12,15 @@ Documentation: https://chrisproject.org/docs/oxidicom
 
 ## Development
 
-You'll need: [Docker Compose](https://docs.docker.com/compose/) and [Rust](https://rustup.rs/).
+You'll need: [podman-compose](https://github.com/containers/podman-compose) (or [Docker Compose](https://docs.docker.com/compose/))
+and [Rust](https://rustup.rs/) (or use [`nix develop`](https://nix.dev/manual/nix/2.34/command-ref/new-cli/nix3-develop)).
 
-Start [RabbitMQ](https://hub.docker.com/_/rabbitmq) and [Orthanc](https://www.orthanc-server.com/)
+Start [DragonflyDB](https://github.com/dragonflydb/dragonfly/pkgs/container/dragonfly) and [Orthanc](https://www.orthanc-server.com/)
 services for testing, then download test data:
 
 ```shell
-docker compose up -d
-docker compose run --rm get-data
+podman-compose up -d
+podman-compose --profile tools run --rm get-data
 ```
 
 Run all tests:
@@ -32,7 +33,7 @@ cargo test
 Clean up:
 
 ```shell
-docker compose down -v
+podman-compose down -v
 ```
 
 ## Notes
