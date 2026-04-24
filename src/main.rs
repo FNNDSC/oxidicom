@@ -1,7 +1,7 @@
 //! Initialize OpenTelemetry, then call [oxidicom::run_everything_from_env].
 
-use figment::providers::Env;
 use figment::Figment;
+use figment::providers::Env;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use std::sync::LazyLock;
 

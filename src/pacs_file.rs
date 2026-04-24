@@ -1,10 +1,10 @@
 use std::fmt::Display;
 
-use crate::error::{name_of, DicomRequiredTagError, RequiredTagError};
+use crate::AETitle;
+use crate::error::{DicomRequiredTagError, RequiredTagError, name_of};
 use crate::patient_age::parse_age;
 use crate::sanitize::sanitize_path;
 use crate::types::{DicomFilePath, DicomInfo};
-use crate::AETitle;
 use dicom::dictionary_std::tags;
 use dicom::object::{DefaultDicomObject, Tag};
 

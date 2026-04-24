@@ -3,7 +3,7 @@ use crate::enums::AssociationEvent;
 use crate::scp::handle_association;
 use crate::thread_pool::ThreadPool;
 use opentelemetry::trace::{Status, TraceContextExt, Tracer};
-use opentelemetry::{global, Context, KeyValue};
+use opentelemetry::{Context, KeyValue, global};
 use opentelemetry_semantic_conventions as semconv;
 use std::net::{SocketAddrV4, TcpListener, TcpStream};
 use std::sync::Arc;

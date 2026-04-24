@@ -91,7 +91,7 @@ fn count_series(
 #[cfg(test)]
 mod tests {
 
-    use crate::{lonk_publisher::LonkPriority, AETitle};
+    use crate::{AETitle, lonk_publisher::LonkPriority};
     use ulid::Ulid;
 
     use super::*;

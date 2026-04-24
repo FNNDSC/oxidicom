@@ -7,21 +7,21 @@ use std::net::TcpStream;
 
 use dicom::core::{DataElement, VR};
 use dicom::dicom_value;
-use dicom::dictionary_std::{tags, StandardDataDictionary};
+use dicom::dictionary_std::{StandardDataDictionary, tags};
 use dicom::encoding::TransferSyntaxIndex;
 use dicom::object::{FileMetaTableBuilder, InMemDicomObject};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom::ul::association::server::AcceptAny;
 use dicom::ul::pdu::PDataValueType;
 use dicom::ul::{Pdu, ServerAssociationOptions};
-use opentelemetry::trace::TraceContextExt;
 use opentelemetry::KeyValue;
+use opentelemetry::trace::TraceContextExt;
 use tokio::sync::mpsc::UnboundedSender;
 use ulid::Ulid;
 
+use crate::AETitle;
 use crate::association_error::{AssociationError, AssociationError::*};
 use crate::enums::AssociationEvent;
-use crate::AETitle;
 
 /// Handle an "association" from an "SCU" (i.e. handle when someone is trying to give us DICOM files).
 ///

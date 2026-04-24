@@ -1,8 +1,8 @@
 use crate::transfer::ABSTRACT_SYNTAXES;
 use dicom::dictionary_std::uids;
 use dicom::transfer_syntax::TransferSyntaxRegistry;
-use dicom::ul::association::server::AcceptAny;
 use dicom::ul::ServerAssociationOptions;
+use dicom::ul::association::server::AcceptAny;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct DicomRsSettings {

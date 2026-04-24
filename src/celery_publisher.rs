@@ -1,6 +1,6 @@
 use crate::types::{DicomInfo, SeriesPath};
-use celery::error::CeleryError;
 use celery::Celery;
+use celery::error::CeleryError;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub(crate) type CubeRegistrationParams = (DicomInfo<SeriesPath>, u32);

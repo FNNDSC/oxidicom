@@ -1,3 +1,4 @@
+use crate::AETitle;
 use crate::channel_helpers::{send_error_left, send_error_right};
 use crate::enums::{AssociationEvent, SeriesEvent};
 use crate::error::{DicomRequiredTagError, DicomStorageError};
@@ -5,7 +6,6 @@ use crate::lonk::Lonk;
 use crate::lonk_publisher::PublishLonkParams;
 use crate::pacs_file::{BadTag, PacsFileRegistration};
 use crate::types::{DicomFilePath, DicomInfo, PendingDicomInstance, SeriesKey, SeriesPath};
-use crate::AETitle;
 use camino::{Utf8Path, Utf8PathBuf};
 use dicom::object::DefaultDicomObject;
 use either::Either;

@@ -3,7 +3,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::limiter::{LockError, SubjectLimiter};
-use crate::lonk::{subject_of, Lonk};
+use crate::lonk::{Lonk, subject_of};
 
 /// Publishes LONK messages from the channel to NATS.
 ///
@@ -34,7 +34,10 @@ pub(crate) async fn lonk_publisher(
             limited_send_lonk(subject, lonk, client, &limiter).await?;
         }
         if let Some(sleep_duration) = sleep {
-            tracing::info!("OXIDICOM_DEV_SLEEP is set, sleeping for {:?}. Please unset this option in production!", sleep_duration);
+            tracing::info!(
+                "OXIDICOM_DEV_SLEEP is set, sleeping for {:?}. Please unset this option in production!",
+                sleep_duration
+            );
             tokio::time::sleep(sleep_duration).await;
         }
     }
